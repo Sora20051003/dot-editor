@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#1e2026">
+    <title>ドット絵 通信モード</title>
+    <link rel="icon" href="icon.ico">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/play.css">
+</head>
+<body>
+    <header class="toolbar">
+        <h1 class="app-title">ドット絵 通信モード</h1>
+        <span id="myName" class="dim"></span>
+        <span id="connectionStatus" class="dim"></span>
+        <a href="index.html" class="link-button">エディタに戻る</a>
+    </header>
+
+    <main class="play-main">
+        <!-- 最初の画面 -->
+        <section id="screenStart" class="screen card narrow">
+            <h2>通信モード</h2>
+            <p>サーバーを使わず、ブラウザどうしを直接つないで遊びます（2〜12 人）。</p>
+            <label class="field">あなたの名前
+                <input type="text" id="nameInput" maxlength="12" autocomplete="off" placeholder="例：たろう">
+            </label>
+            <div class="button-row">
+                <button type="button" id="btnHost" class="primary">部屋を作る（ホスト）</button>
+                <button type="button" id="btnJoin">部屋に入る</button>
+            </div>
+            <p class="error" id="startError"></p>
+            <p class="hint warn">つなぐときに渡し合うコードには、あなたのネット上の住所（IP アドレス）が入っています。知っている人にだけ送ってください。</p>
+            <p class="hint">お互いの住所を調べるためだけに Google の無料の仕組み（STUN）を使います。絵や回答はそこを通りません。会社や学校のネットではつながらないことがあります。</p>
+        </section>
+
+        <!-- 参加する人：招待コードを貼って返事コードを作る -->
+        <section id="screenJoin" class="screen card narrow" hidden>
+            <h2>部屋に入る</h2>
+            <ol class="steps">
+                <li>
+                    <p>ホストから届いた<strong>招待コード</strong>を貼り付けてください</p>
+                    <textarea id="inviteCodeInput" rows="4" spellcheck="false" placeholder="DOTNET1:..."></textarea>
+                    <button type="button" id="btnMakeReply" class="primary">返事コードを作る</button>
+                    <p class="error" id="joinError"></p>
+                </li>
+                <li>
+                    <p>この<strong>返事コード</strong>をホストに送ってください</p>
+                    <textarea id="replyCodeOutput" rows="4" spellcheck="false" readonly></textarea>
+                    <button type="button" id="btnCopyReply">コピー</button>
+                </li>
+            </ol>
+            <p id="joinStatus" class="status-line"></p>
+        </section>
+
+        <!-- 待合室 -->
+        <section id="screenLobby" class="screen lobby" hidden>
+            <div class="card">
+                <h2>参加者 <span id="playerCount"></span></h2>
+                <ul id="lobbyPlayers" class="player-list"></ul>
+
+                <div id="invitePanel" hidden>
+                    <h3>人を招待する（1人ずつ）</h3>
+                    <ol class="steps">
+                        <li>
+                            <button type="button" id="btnCreateInvite" class="primary">招待コードを作る</button>
+                            <textarea id="inviteCodeOutput" rows="3" spellcheck="false" readonly></textarea>
+                            <button type="button" id="btnCopyInvite">コピー</button>
+                            <p class="hint">これを入る人に送ります</p>
+                        </li>
+                        <li>
+                            <p>届いた<strong>返事コード</strong>を貼り付けてください</p>
+                            <textarea id="replyCodeInput" rows="3" spellcheck="false" placeholder="DOTNET1:..."></textarea>
+                            <button type="button" id="btnAcceptReply">つなぐ</button>
+                        </li>
+                    </ol>
+                    <p class="error" id="inviteError"></p>
+                    <p id="inviteStatus" class="status-line"></p>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>遊び方</h2>
+                <fieldset id="settingsFields" class="settings">
+                    <label class="mode-option"><input type="radio" name="mode" value="guess">
+                        <span><strong>お題当て</strong><small>描く人にだけお題が見えます。描いている途中の絵を見て、他の人が当てます</small></span></label>
+                    <label class="mode-option"><input type="radio" name="mode" value="quiz">
+                        <span><strong>だんだんクイズ</strong><small>描いた絵を 1×1 → 2×2 → … と少しずつ細かくして見せます。早く当てるほど高得点</small></span></label>
+                    <label class="mode-option"><input type="radio" name="mode" value="relay">
+                        <span><strong>伝言お絵かき</strong><small>お題 → 絵 → 言葉 → 絵 … と隣の人へ伝言して、最後にどう変わったかを見ます</small></span></label>
+
+                    <div class="settings-grid">
+                        <label id="rowQuizOrder">出題する人
+                            <select id="setQuizOrder">
+                                <option value="rotate">交互（順番に出題）</option>
+                                <option value="host">ホストがずっと出題</option>
+                            </select>
+                        </label>
+                        <label>絵の大きさ
+                            <select id="setSize">
+                                <option value="16">16 × 16 マス</option>
+                                <option value="32">32 × 32 マス</option>
+                                <option value="64">64 × 64 マス</option>
+                            </select>
+                        </label>
+                        <label>描く時間（秒）<input type="number" id="setDrawSeconds" min="20" max="300" step="10"></label>
+                        <label id="rowRevealSeconds">1段を見せる時間（秒）<input type="number" id="setRevealSeconds" min="3" max="20"></label>
+                        <label id="rowRounds"><span id="roundsLabel">1人が出題する回数</span><input type="number" id="setRounds" min="1" max="10"></label>
+                    </div>
+                </fieldset>
+                <button type="button" id="btnStart" class="primary big">ゲーム開始</button>
+                <p id="lobbyNote" class="hint"></p>
+            </div>
+        </section>
+
+        <!-- ゲーム中 -->
+        <section id="screenGame" class="screen game" hidden>
+            <div class="game-main card">
+                <div class="phase-head">
+                    <h2 id="phaseTitle"></h2>
+                    <span id="phaseTimer" class="timer"></span>
+                </div>
+                <p id="phaseMessage" class="phase-message"></p>
+
+                <div id="panelWait" class="phase-panel"></div>
+
+                <div id="panelPrompt" class="phase-panel">
+                    <div id="promptChoices" class="choices"></div>
+                    <div class="code-row">
+                        <input type="text" id="promptInput" autocomplete="off" placeholder="自分で入力する">
+                        <button type="button" id="btnPromptSubmit" class="primary">決定</button>
+                    </div>
+                </div>
+
+                <div id="panelDraw" class="phase-panel draw-panel">
+                    <p class="prompt-box">お題：<strong id="drawPrompt"></strong></p>
+                    <div class="draw-area">
+                        <div class="draw-tools">
+                            <div class="tool-row">
+                                <button type="button" data-game-tool="pen" class="is-active" title="ペン (B)">ペン</button>
+                                <button type="button" data-game-tool="eraser" title="消しゴム (E)">消しゴム</button>
+                                <button type="button" data-game-tool="fill" title="塗りつぶし (G)">塗りつぶし</button>
+                            </div>
+                            <div class="tool-row">
+                                <button type="button" id="btnDrawUndo" title="取り消し (Ctrl+Z)">取り消し</button>
+                                <button type="button" id="btnDrawRedo" title="やり直し (Ctrl+Y)">やり直し</button>
+                                <button type="button" id="btnDrawClear">全部消す</button>
+                            </div>
+                            <label class="inline">太さ <input type="range" id="drawBrushSize" min="1" max="16" value="1"> <span id="drawBrushSizeLabel">1</span></label>
+                            <div class="inline">
+                                <label class="inline"><input type="radio" name="drawBrushShape" value="square" checked> 四角</label>
+                                <label class="inline"><input type="radio" name="drawBrushShape" value="round"> 丸</label>
+                            </div>
+                            <div class="inline">色 <span id="drawColorChip" class="chip color-chip"></span></div>
+                            <div class="color-picker" id="drawColorPicker"></div>
+                            <div id="drawPalette" class="palette"></div>
+                            <p class="hint">右クリックで白く消す／Alt＋クリックで色を拾う／スマホは2本指で拡大・移動、2本指で軽くたたくと取り消し</p>
+                        </div>
+                        <section class="stage" id="drawStage">
+                            <canvas id="drawView"></canvas>
+                        </section>
+                    </div>
+                    <button type="button" id="btnDrawDone" class="primary big">できた！</button>
+                </div>
+
+                <div id="panelView" class="phase-panel">
+                    <canvas id="viewImage" class="pixel-image large"></canvas>
+                    <div id="viewAnswerRow" class="code-row">
+                        <input type="text" id="viewAnswerInput" autocomplete="off" placeholder="答えを書く">
+                        <button type="button" id="btnViewAnswer" class="primary">決定</button>
+                    </div>
+                </div>
+
+                <div id="panelChain" class="phase-panel">
+                    <ol id="chainEntries" class="chain"></ol>
+                    <button type="button" id="btnChainNext" class="primary big">次へ</button>
+                </div>
+
+                <div id="panelFinal" class="phase-panel">
+                    <ol id="finalRanking" class="ranking"></ol>
+                    <button type="button" id="btnToLobby" class="primary big">待合室に戻る</button>
+                </div>
+            </div>
+
+            <aside class="game-side card">
+                <h3>参加者</h3>
+                <ul id="scoreList" class="player-list"></ul>
+                <h3>回答</h3>
+                <ul id="feedList" class="feed"></ul>
+                <div id="answerRow" class="code-row">
+                    <input type="text" id="answerInput" autocomplete="off" maxlength="30" placeholder="答えを入力して Enter">
+                    <button type="button" id="btnAnswer" class="primary">送る</button>
+                </div>
+            </aside>
+        </section>
+    </main>
+
+    <footer class="status">
+        <span id="statusMessage" class="message"></span>
+    </footer>
+
+    <script src="js/ColorUtil.js"></script>
+    <script src="js/PixelCanvas.js"></script>
+    <script src="js/LayerStack.js"></script>
+    <script src="js/EditHistory.js"></script>
+    <script src="js/BrushShape.js"></script>
+    <script src="js/Painter.js"></script>
+    <script src="js/ToolController.js"></script>
+    <script src="js/ViewRenderer.js"></script>
+    <script src="js/CanvasInput.js"></script>
+    <script src="js/ColorPicker.js"></script>
+    <script src="js/ColorPanel.js"></script>
+    <script src="js/net/ByteCodec.js"></script>
+    <script src="js/net/SignalCode.js"></script>
+    <script src="js/net/PeerLink.js"></script>
+    <script src="js/net/HostSession.js"></script>
+    <script src="js/net/GuestSession.js"></script>
+    <script src="js/game/AnswerChecker.js"></script>
+    <script src="js/game/PromptList.js"></script>
+    <script src="js/game/PixelImage.js"></script>
+    <script src="js/game/OneShotTimer.js"></script>
+    <script src="js/game/PromptChooser.js"></script>
+    <script src="js/game/GuessBoard.js"></script>
+    <script src="js/game/PresenterGame.js"></script>
+    <script src="js/game/RevealQuizGame.js"></script>
+    <script src="js/game/GuessDrawGame.js"></script>
+    <script src="js/game/RelayDrawGame.js"></script>
+    <script src="js/game/GameRoom.js"></script>
+    <script src="js/play/PixelImageView.js"></script>
+    <script src="js/play/Countdown.js"></script>
+    <script src="js/play/GameDrawPad.js"></script>
+    <script src="js/play/LobbyView.js"></script>
+    <script src="js/play/GameSidePanel.js"></script>
+    <script src="js/play/GameScreen.js"></script>
+    <script src="js/ServiceWorkerSetup.js"></script>
+    <script src="js/play/PlayApp.js"></script>
+</body>
+</html>

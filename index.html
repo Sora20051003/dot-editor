@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#1e2026">
+    <title>ドット絵エディタ</title>
+    <link rel="icon" href="icon.ico">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="editor">
+    <header class="toolbar">
+        <h1 class="app-title">ドット絵エディタ</h1>
+        <div class="group">
+            <button type="button" id="btnNew" title="マス目の数を変える・新しく描く">マス目の数</button>
+            <button type="button" id="btnOpen" title="作業ファイル（.dotart）や PNG などの画像を開く (Ctrl+O)">開く</button>
+            <input type="file" id="fileInput" accept=".dotart,image/png,image/gif,image/bmp,image/webp,image/jpeg" hidden>
+            <button type="button" id="btnSaveProject" class="primary"
+                title="レイヤーを残したまま .dotart で保存 (Ctrl+S)。2回目からは同じファイルに上書き。Shift+クリックか Ctrl+Shift+S で別の名前で保存">作業ファイルで保存</button>
+            <label class="inline" title="PNG で保存するときの拡大倍率">倍率
+                <select id="exportScale">
+                    <option value="1">1 倍</option>
+                    <option value="2">2 倍</option>
+                    <option value="4">4 倍</option>
+                    <option value="8">8 倍</option>
+                    <option value="16">16 倍</option>
+                    <option value="32">32 倍</option>
+                </select>
+            </label>
+            <button type="button" id="btnSave" title="見えているレイヤーを重ねて1枚の PNG で保存">PNG で保存</button>
+        </div>
+        <div class="group">
+            <button type="button" id="btnUndo" title="取り消し (Ctrl+Z)">取り消し</button>
+            <button type="button" id="btnRedo" title="やり直し (Ctrl+Y)">やり直し</button>
+        </div>
+        <div class="group">
+            <button type="button" id="btnFlipH" title="選んでいるレイヤーを左右反転 (H)">左右反転</button>
+            <button type="button" id="btnFlipV" title="選んでいるレイヤーを上下反転 (V)">上下反転</button>
+        </div>
+        <div class="group">
+            <label class="inline"><input type="checkbox" id="chkGrid" checked> マス目の線</label>
+            <label class="inline">区切り線
+                <select id="gridMajor">
+                    <option value="0">なし</option>
+                    <option value="4">4 マスごと</option>
+                    <option value="8">8 マスごと</option>
+                    <option value="16">16 マスごと</option>
+                    <option value="32">32 マスごと</option>
+                    <option value="64">64 マスごと</option>
+                </select>
+            </label>
+        </div>
+        <div class="group">
+            <button type="button" id="btnZoomOut" class="square" title="縮小 (-)">－</button>
+            <span id="zoomLabel" class="zoom-label">100%</span>
+            <button type="button" id="btnZoomIn" class="square" title="拡大 (+)">＋</button>
+            <button type="button" id="btnFit" title="全体を表示 (0)">全体表示</button>
+        </div>
+        <div class="group">
+            <button type="button" id="btnPlay" title="サーバーなしで友だちとつないで遊ぶ（新しいタブで開く）">通信モード</button>
+        </div>
+    </header>
+
+    <main class="layout">
+        <aside class="panel tools">
+          <div class="panel-section" data-section="tools">
+            <h2>道具</h2>
+            <div class="tool-list">
+                <button type="button" data-tool="pen" class="is-active" title="ペン (B)">ペン<kbd>B</kbd></button>
+                <button type="button" data-tool="eraser" title="消しゴム (E)">消しゴム<kbd>E</kbd></button>
+                <button type="button" data-tool="fill" title="塗りつぶし (G)">塗りつぶし<kbd>G</kbd></button>
+                <button type="button" data-tool="picker" title="スポイト (I)">スポイト<kbd>I</kbd></button>
+                <button type="button" data-tool="line" title="直線 (L)">直線<kbd>L</kbd></button>
+                <button type="button" data-tool="rect" title="四角 (R)">四角<kbd>R</kbd></button>
+            </div>
+            <label class="field" for="brushSize">太さ（マス）</label>
+            <div class="brush-size-row">
+                <input type="range" id="brushSizeRange" min="1" max="64" value="1" aria-label="太さ">
+                <input type="number" id="brushSize" min="1" max="64" value="1">
+            </div>
+            <div class="brush-shape" role="radiogroup" aria-label="筆の形">
+                <span>筆の形</span>
+                <label class="inline"><input type="radio" name="brushShape" value="square" checked> 四角</label>
+                <label class="inline"><input type="radio" name="brushShape" value="round"> 丸</label>
+            </div>
+            <label class="inline"><input type="checkbox" id="chkRectFill"> 四角を中まで塗る</label>
+          </div>
+
+          <div class="panel-section" data-section="layers">
+            <h2>レイヤー</h2>
+            <div class="layer-buttons">
+                <button type="button" id="btnLayerAdd" title="選んでいるレイヤーの上に追加">追加</button>
+                <button type="button" id="btnLayerDup" title="選んでいるレイヤーを複製">複製</button>
+                <button type="button" id="btnLayerDelete" title="選んでいるレイヤーを削除">削除</button>
+                <button type="button" id="btnLayerUp" title="1つ上へ">上へ</button>
+                <button type="button" id="btnLayerDown" title="1つ下へ">下へ</button>
+            </div>
+            <ul class="layer-list" id="layerList"></ul>
+            <label class="field">不透明度 <span id="layerOpacityLabel">100%</span>
+                <input type="range" id="layerOpacity" min="0" max="100" value="100">
+            </label>
+            <p class="hint">クリックで描く先を選ぶ。チェックで表示・非表示。名前はダブルクリックで変更</p>
+          </div>
+
+          <div class="panel-section" data-section="help">
+            <h2>操作</h2>
+            <ul class="help">
+                <li>左クリック：左の色で描く</li>
+                <li>右クリック：右の色で描く</li>
+                <li>Alt＋クリック：色を拾う</li>
+                <li>ホイール：拡大・縮小</li>
+                <li>スペース＋ドラッグ／中ボタン：移動</li>
+                <li>[ ]：太さを変える</li>
+                <li>X：左右の色を入れ替え</li>
+                <li>H：左右反転／V：上下反転（選んでいるレイヤー）</li>
+                <li>Ctrl+S：作業ファイルで保存</li>
+                <li>スマホ：1本指で描く／2本指で拡大・移動／2本指で軽くたたくと取り消し</li>
+            </ul>
+          </div>
+        </aside>
+
+        <section class="stage" id="stage">
+            <canvas id="view"></canvas>
+        </section>
+
+        <aside class="panel colors">
+            <h2>色</h2>
+            <div class="slots">
+                <button type="button" id="slotPrimary" class="slot is-active" title="左クリックで描く色">
+                    <span class="chip slot-chip" id="swatchPrimary"></span>左
+                </button>
+                <button type="button" id="slotSecondary" class="slot" title="右クリックで描く色">
+                    <span class="chip slot-chip" id="swatchSecondary"></span>右
+                </button>
+                <button type="button" id="btnSwap" title="左右の色を入れ替え (X)">入れ替え</button>
+            </div>
+            <p class="hint">選んでいる方（枠付き）の色を下で変えます</p>
+
+            <h3>細かく選ぶ</h3>
+            <div class="color-picker" id="colorPicker"></div>
+            <p class="hint">四角：横で鮮やかさ、縦で明るさ／虹色の帯：色合い／下の帯：透明度（左ほど透明）</p>
+
+            <h3>コードで選ぶ</h3>
+            <div class="code-row">
+                <input type="text" id="colorCode" spellcheck="false" autocomplete="off" placeholder="#FF8800">
+                <button type="button" id="btnApplyCode">決定</button>
+            </div>
+            <p class="error" id="codeError"></p>
+            <p class="hint">#RGB・#RRGGBB・#RRGGBBAA・255,136,0 などが使えます</p>
+            <div class="channels">
+                <label>R<input type="number" id="inR" min="0" max="255"></label>
+                <label>G<input type="number" id="inG" min="0" max="255"></label>
+                <label>B<input type="number" id="inB" min="0" max="255"></label>
+                <label>A<input type="number" id="inA" min="0" max="255" title="透明度（0 で透明、255 で不透明）"></label>
+            </div>
+            <label class="inline picker-row">見た目で選ぶ <input type="color" id="nativePicker"></label>
+
+            <h3>表から選ぶ</h3>
+            <div class="palette" id="presetPalette"></div>
+            <p class="hint">左クリック：左の色に／右クリック：右の色に</p>
+
+            <h3>マイパレット</h3>
+            <button type="button" id="btnAddMy">選んでいる色を追加</button>
+            <div class="palette" id="myPalette"></div>
+            <p class="hint">Ctrl＋クリックで削除。このブラウザに保存されます</p>
+
+            <h3>最近使った色</h3>
+            <div class="palette" id="recentPalette"></div>
+        </aside>
+    </main>
+
+    <!-- スマホ（狭い画面）だけに出す下のボタン列。道具・色・レイヤーの欄を下から出す -->
+    <nav class="mobile-nav" id="mobileNav" aria-label="スマホ用の操作">
+        <button type="button" data-sheet="tools"><span id="mobileToolName">ペン</span><small>道具</small></button>
+        <button type="button" data-sheet="colors"><span class="chip mobile-color-chip" id="mobileColorChip"></span><small>色</small></button>
+        <button type="button" data-sheet="layers"><span>層</span><small>レイヤー</small></button>
+        <button type="button" id="btnMobileUndo"><span>↶</span><small>取り消し</small></button>
+        <button type="button" id="btnMobileRedo"><span>↷</span><small>やり直し</small></button>
+        <button type="button" data-sheet="help"><span>？</span><small>操作</small></button>
+    </nav>
+
+    <footer class="status">
+        <span id="statusSize"></span>
+        <span id="statusLayer"></span>
+        <span id="statusPos"></span>
+        <span id="statusColor"></span>
+        <span id="statusMessage" class="message"></span>
+    </footer>
+
+    <dialog id="sizeDialog">
+        <form method="dialog">
+            <h2>マス目の数</h2>
+            <div class="size-inputs">
+                <label class="field">横<input type="number" id="inWidth" min="1" max="4096" required></label>
+                <span class="times">×</span>
+                <label class="field">縦<input type="number" id="inHeight" min="1" max="4096" required></label>
+            </div>
+            <label class="inline"><input type="checkbox" id="chkSquare"> 縦横を同じにする</label>
+            <div class="presets">
+                <button type="button" data-size="1">1</button>
+                <button type="button" data-size="8">8</button>
+                <button type="button" data-size="16">16</button>
+                <button type="button" data-size="24">24</button>
+                <button type="button" data-size="32">32</button>
+                <button type="button" data-size="48">48</button>
+                <button type="button" data-size="64">64</button>
+                <button type="button" data-size="128">128</button>
+                <button type="button" data-size="256">256</button>
+                <button type="button" data-size="512">512</button>
+                <button type="button" data-size="1024">1024</button>
+                <button type="button" data-size="2048">2048</button>
+                <button type="button" data-size="4096">4096</button>
+            </div>
+            <label class="inline"><input type="radio" name="sizeMode" value="keep" checked> 今の絵を残して大きさだけ変える</label>
+            <label class="inline"><input type="radio" name="sizeMode" value="new"> 何もない状態から新しく描く</label>
+            <p class="hint">1〜4096 マスまで。変えると取り消しの履歴は消えます</p>
+            <menu>
+                <button type="submit" value="cancel" formnovalidate>やめる</button>
+                <button type="submit" value="ok" class="primary">決定</button>
+            </menu>
+        </form>
+    </dialog>
+
+    <script src="js/ColorUtil.js"></script>
+    <script src="js/PixelCanvas.js"></script>
+    <script src="js/LayerStack.js"></script>
+    <script src="js/EditHistory.js"></script>
+    <script src="js/BrushShape.js"></script>
+    <script src="js/Painter.js"></script>
+    <script src="js/ToolController.js"></script>
+    <script src="js/ViewRenderer.js"></script>
+    <script src="js/CanvasInput.js"></script>
+    <script src="js/ColorPicker.js"></script>
+    <script src="js/ColorPanel.js"></script>
+    <script src="js/ImageFile.js"></script>
+    <script src="js/CanvasSizeDialog.js"></script>
+    <script src="js/LayerPanel.js"></script>
+    <script src="js/ProjectFile.js"></script>
+    <script src="js/MobileLayout.js"></script>
+    <script src="js/ServiceWorkerSetup.js"></script>
+    <script src="js/App.js"></script>
+</body>
+</html>
