@@ -18,6 +18,7 @@
     "js/ColorUtil.js",
     "js/EditHistory.js",
     "js/ImageFile.js",
+    "js/InstallBanner.js",
     "js/LayerPanel.js",
     "js/LayerStack.js",
     "js/MobileLayout.js",

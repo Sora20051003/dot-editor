@@ -710,3 +710,30 @@ label {
         height: 18px;
     }
 }
+
+/* ---- 「アプリとして入れる」の帯（公開版をブラウザのタブで開いたときだけ） ---- */
+.install-banner {
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: min(640px, calc(100vw - 16px));
+    padding: 10px 12px;
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    font-size: 13px;
+}
+
+.install-banner span {
+    flex: 1;
+}
+
+.install-banner button {
+    flex-shrink: 0;
+}

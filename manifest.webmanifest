@@ -1,4 +1,5 @@
 {
+  "id": "./",
   "name": "ドット絵エディタ",
   "short_name": "ドット絵",
   "description": "ブラウザで動くドット絵エディタ。レイヤー・色の細かい指定・通信モード付き",
@@ -8,6 +9,10 @@
   "display": "standalone",
   "background_color": "#1e2026",
   "theme_color": "#1e2026",
+  "handle_links": "preferred",
+  "launch_handler": {
+    "client_mode": ["navigate-existing", "auto"]
+  },
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
