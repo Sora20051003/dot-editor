@@ -2,16 +2,16 @@
 
 // 絵のまわりに残す余白（画面の割合）
 const kAvatarMargin = 0.04;
-// 首の位置（絵の高さに対する割合）。頭は左右には傾けず、上下にだけ動かす（利用者の希望で横揺れをなくした）
+// 頭を傾けるときの中心＝首の位置（絵の幅・高さに対する割合）
+const kHeadPivotX = 0.5;
 const kHeadPivotY = 0.62;
-// 話しているときに頭が少し上がる量（絵の高さに対する割合）と、戻る速さ
-const kTalkBobAmount = 0.008;
-const kTalkBobEase = 0.25;
-// 呼吸：体を下の端を中心に、縦にわずかに伸び縮みさせる
-const kBreathPeriodMs = 3400;
-const kBreathScale = 0.006;
+// 頭の傾きの上限。読み取りの間違いで首が折れたように見えないよう、ここで止める
+const kMaxHeadRoll = 30 * Math.PI / 180;
+// 顔の向き（両目の幅に対する鼻のずれ）を、頭の部品をずらす量（絵の幅・高さに対する割合）に直す係数と上限
+const kHeadShiftPerTurn = 0.06;
+const kMaxHeadShift = 0.03;
 
-// アバターの部品を重ねて描く。目と口は状態に合わせて出し入れし、頭と体を別々にゆらす
+// アバターの部品を重ねて描く。自分では動かず、カメラで読み取った頭の向き・目・口のとおりにだけ動かす
 class AvatarView
 {
     constructor(canvas)
@@ -19,7 +19,6 @@ class AvatarView
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.model = null;
-        this.talkBob = 0;
     }
 
     setModel(model)
@@ -27,14 +26,13 @@ class AvatarView
         this.model = model;
     }
 
-    // state: { now, isEyesClosed, isMouthOpen }
+    // state: { roll, yaw, pitch, isEyesClosed, isMouthOpen }（FaceTracker の値。カメラなしならすべて 0 / false）
     render(state)
     {
         this.fitCanvasToScreen();
         const ctx = this.ctx;
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         if (this.model === null) return;
-        this.talkBob += ((state.isMouthOpen ? 1 : 0) - this.talkBob) * kTalkBobEase;
         const model = this.model;
         const scale = this.fitScale();
         ctx.save();
@@ -45,8 +43,7 @@ class AvatarView
         for (const part of model.parts) {
             if (!this.isPartShown(part, state)) continue;
             ctx.save();
-            if (part.role === 'body') this.applyBreath(state.now);
-            else this.applyHeadMotion(state.now);
+            if (part.role !== 'body') this.applyHeadPose(state);
             ctx.globalAlpha = part.opacity;
             ctx.drawImage(part.image, 0, 0);
             ctx.restore();
@@ -66,23 +63,17 @@ class AvatarView
         }
     }
 
-    applyBreath(now)
+    applyHeadPose(state)
     {
         const { width, height } = this.model;
-        const stretch = 1 + Math.sin((now / kBreathPeriodMs) * Math.PI * 2) * kBreathScale;
-        this.ctx.translate(width / 2, height);
-        this.ctx.scale(1, stretch);
-        this.ctx.translate(-width / 2, -height);
-    }
-
-    applyHeadMotion(now)
-    {
-        const height = this.model.height;
+        const clamp = (value, limit) => Math.max(-limit, Math.min(limit, value));
+        const pivotX = width * kHeadPivotX;
         const pivotY = height * kHeadPivotY;
-        // 呼吸で体が伸びた分だけ頭も上下させ、首が離れないようにする
-        const breathLift = Math.sin((now / kBreathPeriodMs) * Math.PI * 2) * kBreathScale * (height - pivotY);
-        const lift = this.talkBob * kTalkBobAmount * height + breathLift;
-        this.ctx.translate(0, -lift);
+        const shiftX = clamp(state.yaw * kHeadShiftPerTurn, kMaxHeadShift) * width;
+        const shiftY = clamp(state.pitch * kHeadShiftPerTurn, kMaxHeadShift) * height;
+        this.ctx.translate(pivotX + shiftX, pivotY + shiftY);
+        this.ctx.rotate(clamp(state.roll, kMaxHeadRoll));
+        this.ctx.translate(-pivotX, -pivotY);
     }
 
     fitScale()

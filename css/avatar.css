@@ -60,30 +60,25 @@ body.avatar-page[data-background="dark"] { background: var(--stage-bg); }
     gap: 2px;
 }
 
-.voice-meter {
-    position: relative;
-    height: 10px;
-    background: var(--button);
-    border-radius: 5px;
-    overflow: hidden;
+.camera-preview {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background: #000000;
+    border-radius: 4px;
+    transform: scaleX(-1);
 }
 
-.voice-meter-bar {
-    height: 100%;
-    width: 0;
-    background: var(--text-dim);
+.camera-preview[hidden] {
+    display: none;
 }
 
-.voice-meter-bar.is-open {
-    background: var(--accent);
+.face-status {
+    margin: 0;
+    color: var(--text-dim);
 }
 
-.voice-meter-threshold {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: var(--error);
+.face-status:empty {
+    display: none;
 }
 
 .avatar-message {

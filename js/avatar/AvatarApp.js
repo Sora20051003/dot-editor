@@ -5,11 +5,13 @@ const kDefaultAvatarUrl = 'models/vtuber-avatar.dotart';
 const kAvatarSettingsKey = 'dotAvatarSettings';
 const kAvatarBackgrounds = Object.freeze(['green', 'blue', 'transparent', 'dark']);
 const kDefaultAvatarBackground = 'green';
-// 大きさの表示（対数）の下の端と上の端（RMS）
-const kMeterMinLevel = 0.001;
-const kMeterMaxLevel = 0.3;
+// 目を閉じた・口を開けたとみなす値（MediaPipe の 0〜1）。開け閉めの境目でパタパタしないよう、閉じる側と開く側で差を付ける
+const kEyesCloseAt = 0.5;
+const kEyesOpenAt = 0.35;
+const kMouthOpenAt = 0.18;
+const kMouthCloseAt = 0.1;
 
-// アバターの画面。マイク・まばたき・描く部品をつなぎ、画面のボタンと結ぶ
+// アバターの画面。カメラの読み取りと描く部品をつなぎ、画面のボタンと結ぶ
 class AvatarApp
 {
     constructor()
@@ -17,23 +19,23 @@ class AvatarApp
         const byId = (id) => document.getElementById(id);
         this.el = {
             canvas: byId('avatarCanvas'),
-            panel: byId('avatarPanel'),
-            mic: byId('btnMic'),
-            sensitivity: byId('voiceSensitivity'),
-            meter: byId('voiceMeterBar'),
-            threshold: byId('voiceMeterThreshold'),
+            camera: byId('btnCamera'),
+            recenter: byId('btnRecenter'),
+            video: byId('cameraPreview'),
+            faceStatus: byId('faceStatus'),
             background: byId('avatarBackground'),
             open: byId('btnOpenAvatar'),
             fileInput: byId('avatarFileInput'),
             hide: byId('btnHideUi'),
             message: byId('avatarMessage'),
-            showHint: byId('showUiHint'),
         };
         this.view = new AvatarView(this.el.canvas);
-        this.mouth = new MouthByVoice();
-        this.blinker = new Blinker();
+        this.tracker = new FaceTracker();
+        this.isEyesClosed = false;
+        this.isMouthOpen = false;
         this.loadSettings();
         this.bindEvents();
+        this.refreshCameraUi();
         if (new URLSearchParams(location.search).has('hideui')) this.setUiHidden(true);
         this.loadDefaultModel();
         requestAnimationFrame((now) => this.tick(now));
@@ -42,10 +44,10 @@ class AvatarApp
     bindEvents()
     {
         const el = this.el;
-        el.mic.addEventListener('click', () => this.toggleMic());
-        el.sensitivity.addEventListener('input', () => {
-            this.mouth.sensitivity = Number(el.sensitivity.value);
-            this.saveSettings();
+        el.camera.addEventListener('click', () => this.toggleCamera());
+        el.recenter.addEventListener('click', () => {
+            this.tracker.recenter();
+            this.showMessage('今の顔の向きを正面にしました');
         });
         el.background.addEventListener('change', () => {
             this.applyBackground(el.background.value);
@@ -101,52 +103,64 @@ class AvatarApp
         }
     }
 
-    async toggleMic()
+    async toggleCamera()
     {
-        if (this.mouth.isRunning) {
-            this.mouth.stop();
-            this.refreshMicButton();
-            this.showMessage('マイクを止めました');
+        if (this.tracker.isRunning) {
+            this.tracker.stop();
+            this.refreshCameraUi();
+            this.showMessage('カメラを止めました。アバターは止まったままになります');
             return;
         }
+        this.el.camera.disabled = true;
+        this.showMessage('顔の読み取りを準備しています…');
         try {
-            await this.mouth.start();
-            this.showMessage('マイクを使っています。話すと口が動きます');
+            await this.tracker.start(this.el.video);
+            this.showMessage('カメラを使っています。最初の一瞬の顔の向きを正面にします');
         } catch (error) {
             const isDenied = error.name === 'NotAllowedError';
-            this.showMessage(isDenied ? 'マイクの使用が許可されませんでした' : `マイクを使えません：${error.message}`);
+            this.showMessage(isDenied ? 'カメラの使用が許可されませんでした' : `カメラを使えません：${error.message}`);
         }
-        this.refreshMicButton();
+        this.el.camera.disabled = false;
+        this.refreshCameraUi();
     }
 
-    refreshMicButton()
+    refreshCameraUi()
     {
-        const isRunning = this.mouth.isRunning;
-        this.el.mic.textContent = isRunning ? 'マイクを止める' : 'マイクを使う';
-        this.el.mic.classList.toggle('primary', !isRunning);
+        const isRunning = this.tracker.isRunning;
+        this.el.camera.textContent = isRunning ? 'カメラを止める' : 'カメラを使う';
+        this.el.camera.classList.toggle('primary', !isRunning);
+        this.el.recenter.disabled = !isRunning;
+        this.el.video.hidden = !isRunning;
     }
 
     tick(now)
     {
-        this.mouth.update(now);
-        this.view.render({ now, isEyesClosed: this.blinker.isClosed(now), isMouthOpen: this.mouth.isOpen });
-        this.refreshMeter();
+        this.tracker.update(now);
+        const face = this.tracker.state;
+        this.isEyesClosed = AvatarApp.withHysteresis(this.isEyesClosed, face.eyesClosed, kEyesCloseAt, kEyesOpenAt);
+        this.isMouthOpen = AvatarApp.withHysteresis(this.isMouthOpen, face.jawOpen, kMouthOpenAt, kMouthCloseAt);
+        this.view.render({
+            roll: face.roll,
+            yaw: face.yaw,
+            pitch: face.pitch,
+            isEyesClosed: face.hasFace && this.isEyesClosed,
+            isMouthOpen: face.hasFace && this.isMouthOpen,
+        });
+        this.refreshFaceStatus(face);
         requestAnimationFrame((next) => this.tick(next));
     }
 
-    refreshMeter()
+    // 今が「オン」なら offAt を下回るまでオンのまま、「オフ」なら onAt を超えるまでオフのまま
+    static withHysteresis(isOn, value, onAt, offAt)
     {
-        this.el.meter.style.width = `${AvatarApp.meterPercent(this.mouth.level)}%`;
-        this.el.meter.classList.toggle('is-open', this.mouth.isOpen);
-        this.el.threshold.style.left = `${AvatarApp.meterPercent(this.mouth.threshold)}%`;
+        return isOn ? value > offAt : value >= onAt;
     }
 
-    static meterPercent(level)
+    refreshFaceStatus(face)
     {
-        const low = Math.log10(kMeterMinLevel);
-        const high = Math.log10(kMeterMaxLevel);
-        const t = (Math.log10(Math.max(level, kMeterMinLevel)) - low) / (high - low);
-        return Math.min(100, Math.max(0, t * 100));
+        let text = '';
+        if (this.tracker.isRunning) text = face.hasFace ? '顔を読み取っています' : '顔が見つかりません';
+        if (this.el.faceStatus.textContent !== text) this.el.faceStatus.textContent = text;
     }
 
     setUiHidden(isHidden)
@@ -175,17 +189,13 @@ class AvatarApp
         } catch {
             settings = {};
         }
-        const sensitivity = Number(settings.sensitivity);
-        this.mouth.sensitivity = sensitivity >= 1 && sensitivity <= 100 ? sensitivity : kDefaultVoiceSensitivity;
-        this.el.sensitivity.value = String(this.mouth.sensitivity);
         this.applyBackground(settings.background);
     }
 
     saveSettings()
     {
-        const settings = { sensitivity: this.mouth.sensitivity, background: document.body.dataset.background };
         try {
-            localStorage.setItem(kAvatarSettingsKey, JSON.stringify(settings));
+            localStorage.setItem(kAvatarSettingsKey, JSON.stringify({ background: document.body.dataset.background }));
         } catch {
             // 覚えられなくても、今の画面ではそのまま使える
         }

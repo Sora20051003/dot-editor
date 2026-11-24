@@ -17,17 +17,14 @@
     <section id="avatarPanel" class="avatar-panel">
         <h1 class="app-title">ドット絵アバター</h1>
         <div class="avatar-row">
-            <button type="button" id="btnMic" class="primary">マイクを使う</button>
+            <button type="button" id="btnCamera" class="primary">カメラを使う</button>
+            <button type="button" id="btnRecenter" title="今の顔の向きを正面（傾き・ずれなし）にする">今の向きを正面に</button>
             <button type="button" id="btnOpenAvatar" title="エディタで保存した作業ファイル（.dotart）を開く。ここへ落としても開けます">絵を開く</button>
             <input type="file" id="avatarFileInput" accept=".dotart" hidden>
         </div>
-        <label class="avatar-field">声に反応する強さ
-            <input type="range" id="voiceSensitivity" min="1" max="100" value="60">
-        </label>
-        <div class="voice-meter" title="声の大きさ。線より右に届くと口が開きます">
-            <div id="voiceMeterBar" class="voice-meter-bar"></div>
-            <div id="voiceMeterThreshold" class="voice-meter-threshold"></div>
-        </div>
+        <!-- 顔が読めているか確かめる小窓。鏡と同じ向きに見せる -->
+        <video id="cameraPreview" class="camera-preview" muted playsinline hidden></video>
+        <p id="faceStatus" class="face-status"></p>
         <label class="avatar-field">背景
             <select id="avatarBackground">
                 <option value="green">緑（配信ソフトで抜く用）</option>
@@ -43,8 +40,10 @@
         <p id="avatarMessage" class="avatar-message" role="status"></p>
         <details class="avatar-help">
             <summary>使い方</summary>
-            <p>エディタでレイヤーに「目 開」「目 閉」「口 開」「口 閉」と名前を付けると、まばたきと口パクに使われます。
-                「体」はゆれず、ほかのレイヤーは頭と一緒にゆれます。</p>
+            <p>アバターは自分では動きません。カメラで読み取った頭の傾き・向き、まばたき、口の開け閉めのとおりにだけ動きます。
+                映像はこの PC の中で読み取るだけで、どこにも送りません。</p>
+            <p>エディタでレイヤーに「目 開」「目 閉」「口 開」「口 閉」と名前を付けると、まばたきと口に使われます。
+                「体」は動かず、ほかのレイヤーは頭と一緒に動きます。</p>
             <p>配信ソフト（OBS など）では、このページを「ウィンドウキャプチャ」で取り込み、緑か青を「クロマキー」で抜いてください。</p>
         </details>
     </section>
@@ -60,8 +59,7 @@
     <script src="js/FrameSet.js"></script>
     <script src="js/ProjectFile.js"></script>
     <script src="js/avatar/AvatarModel.js"></script>
-    <script src="js/avatar/MouthByVoice.js"></script>
-    <script src="js/avatar/Blinker.js"></script>
+    <script src="js/avatar/FaceTracker.js"></script>
     <script src="js/avatar/AvatarView.js"></script>
     <script src="js/avatar/AvatarApp.js"></script>
 </body>
