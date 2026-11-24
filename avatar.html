@@ -22,6 +22,11 @@
             <button type="button" id="btnOpenAvatar" title="エディタで保存した作業ファイル（.dotart）を開く。ここへ落としても開けます">絵を開く</button>
             <input type="file" id="avatarFileInput" accept=".dotart" hidden>
         </div>
+        <label class="avatar-field">使うカメラ
+            <select id="cameraSelect" title="キャプチャ機器や仮想カメラが選ばれて顔が映らないときに、顔を映すカメラを選ぶ">
+                <option value="">自動（顔を映すカメラを選ぶ）</option>
+            </select>
+        </label>
         <!-- 顔が読めているか確かめる小窓。鏡と同じ向きに見せる -->
         <video id="cameraPreview" class="camera-preview" muted playsinline hidden></video>
         <p id="faceStatus" class="face-status"></p>
@@ -42,6 +47,8 @@
             <summary>使い方</summary>
             <p>アバターは自分では動きません。カメラで読み取った頭の傾き・向き、まばたき、口の開け閉めのとおりにだけ動きます。
                 映像はこの PC の中で読み取るだけで、どこにも送りません。</p>
+            <p>「顔が見つかりません」と出て小窓に顔が映らないときは、「使うカメラ」で顔を映すカメラを選んでください
+                （キャプチャ機器や OBS の仮想カメラが選ばれていることがあります）。選んだカメラは次から最初に使います。</p>
             <p>エディタでレイヤーに「目 開」「目 閉」「口 開」「口 閉」と名前を付けると、まばたきと口に使われます。
                 「体」は動かず、ほかのレイヤーは頭と一緒に動きます。</p>
             <p>配信ソフト（OBS など）では、このページを「ウィンドウキャプチャ」で取り込み、緑か青を「クロマキー」で抜いてください。</p>

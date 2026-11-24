@@ -11,6 +11,9 @@ const kEyesCloseAt = 0.5;
 const kEyesOpenAt = 0.35;
 const kMouthOpenAt = 0.18;
 const kMouthCloseAt = 0.1;
+// 顔を映さないカメラ（HDMI のキャプチャ機器・配信ソフトの仮想カメラ）の名前。「自動」のときはこれを避ける。
+// ブラウザは最初に見つけたカメラを選ぶので、キャプチャ機器が先に並ぶ PC では顔が映らなかったため
+const kNonFaceCameraPattern = /capture|virtual|obs|mirabox|elgato|ndi/i;
 
 // アバターの画面。カメラの読み取りと描く部品をつなぎ、画面のボタンと結ぶ
 class AvatarApp
@@ -21,6 +24,7 @@ class AvatarApp
         this.el = {
             canvas: byId('avatarCanvas'),
             camera: byId('btnCamera'),
+            cameraSelect: byId('cameraSelect'),
             recenter: byId('btnRecenter'),
             video: byId('cameraPreview'),
             faceStatus: byId('faceStatus'),
@@ -34,9 +38,12 @@ class AvatarApp
         this.tracker = new FaceTracker();
         this.isEyesClosed = false;
         this.isMouthOpen = false;
+        // 利用者が選んだカメラの deviceId。空なら「自動」
+        this.cameraId = '';
         this.loadSettings();
         this.bindEvents();
         this.refreshCameraUi();
+        this.refreshCameraList();
         if (new URLSearchParams(location.search).has('hideui')) this.setUiHidden(true);
         this.loadDefaultModel();
         requestAnimationFrame((now) => this.tick(now));
@@ -46,6 +53,8 @@ class AvatarApp
     {
         const el = this.el;
         el.camera.addEventListener('click', () => this.toggleCamera());
+        el.cameraSelect.addEventListener('change', () => this.changeCamera(el.cameraSelect.value));
+        navigator.mediaDevices?.addEventListener?.('devicechange', () => this.refreshCameraList());
         el.recenter.addEventListener('click', () => {
             this.tracker.recenter();
             this.showMessage('今の顔の向きを正面にしました');
@@ -122,17 +131,90 @@ class AvatarApp
             this.showMessage('カメラを止めました。アバターは止まったままになります');
             return;
         }
+        await this.startCamera();
+    }
+
+    // 別のカメラを選んだとき。使っている途中ならすぐ切り替える
+    async changeCamera(deviceId)
+    {
+        this.cameraId = deviceId;
+        this.saveSettings();
+        if (!this.tracker.isRunning) return;
+        this.tracker.stop();
+        await this.startCamera();
+    }
+
+    async startCamera()
+    {
         this.el.camera.disabled = true;
+        this.el.cameraSelect.disabled = true;
         this.showMessage('顔の読み取りを準備しています…');
         try {
-            await this.tracker.start(this.el.video);
-            this.showMessage('カメラを使っています。最初の一瞬の顔の向きを正面にします');
+            await this.startPreferredCamera();
+            this.showMessage(`カメラ（${this.currentCameraLabel()}）を使っています。最初の一瞬の顔の向きを正面にします`);
         } catch (error) {
             const isDenied = error.name === 'NotAllowedError';
             this.showMessage(isDenied ? 'カメラの使用が許可されませんでした' : `カメラを使えません：${error.message}`);
         }
         this.el.camera.disabled = false;
+        this.el.cameraSelect.disabled = false;
         this.refreshCameraUi();
+    }
+
+    // 選んだカメラがあればそれを、なければ顔を映すカメラを使う。
+    // カメラの名前は使う許可をもらうまで分からないので、自動のときは一度ブラウザの選ぶカメラで始めてから選び直す
+    async startPreferredCamera()
+    {
+        if (this.cameraId !== '') {
+            try {
+                await this.tracker.start(this.el.video, this.cameraId);
+                await this.refreshCameraList();
+                return;
+            } catch (error) {
+                // 選んだカメラが外されていたら自動に戻す（許可されなかったときはそのまま知らせる）
+                if (error.name === 'NotAllowedError') throw error;
+            }
+        }
+        await this.tracker.start(this.el.video);
+        const cameras = await this.refreshCameraList();
+        const current = cameras.find((camera) => camera.deviceId === this.tracker.deviceId);
+        const faceCamera = cameras.find((camera) => !kNonFaceCameraPattern.test(camera.label));
+        if (current === undefined || faceCamera === undefined) return;
+        if (!kNonFaceCameraPattern.test(current.label) || faceCamera.deviceId === current.deviceId) return;
+        this.tracker.stop();
+        await this.tracker.start(this.el.video, faceCamera.deviceId);
+    }
+
+    // カメラの一覧を選ぶ欄に並べ直し、一覧を返す
+    async refreshCameraList()
+    {
+        if (!navigator.mediaDevices?.enumerateDevices) return [];
+        let cameras = [];
+        try {
+            cameras = (await navigator.mediaDevices.enumerateDevices())
+                .filter((device) => device.kind === 'videoinput' && device.deviceId !== '');
+        } catch {
+            return [];
+        }
+        const select = this.el.cameraSelect;
+        select.replaceChildren(select.options[0]);
+        cameras.forEach((camera, index) => select.add(new Option(camera.label || `カメラ ${index + 1}`, camera.deviceId)));
+        this.syncCameraSelect();
+        return cameras;
+    }
+
+    // 選ぶ欄の表示を合わせる。自動のまま使っているときは「自動」のままにする（次も自動で選び直すため）
+    syncCameraSelect()
+    {
+        const select = this.el.cameraSelect;
+        const hasChosen = [...select.options].some((option) => option.value === this.cameraId);
+        select.value = hasChosen ? this.cameraId : '';
+    }
+
+    currentCameraLabel()
+    {
+        const option = [...this.el.cameraSelect.options].find((o) => o.value !== '' && o.value === this.tracker.deviceId);
+        return option?.textContent ?? '名前不明';
     }
 
     refreshCameraUi()
@@ -201,12 +283,13 @@ class AvatarApp
             settings = {};
         }
         this.applyBackground(settings.background);
+        this.cameraId = typeof settings.cameraId === 'string' ? settings.cameraId : '';
     }
 
     saveSettings()
     {
         try {
-            localStorage.setItem(kAvatarSettingsKey, JSON.stringify({ background: document.body.dataset.background }));
+            localStorage.setItem(kAvatarSettingsKey, JSON.stringify({ background: document.body.dataset.background, cameraId: this.cameraId }));
         } catch {
             // 覚えられなくても、今の画面ではそのまま使える
         }

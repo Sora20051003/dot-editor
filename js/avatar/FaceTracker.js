@@ -42,8 +42,14 @@ class FaceTracker
         return this.stream !== null;
     }
 
-    // video は映像を流す <video>（画面の小窓にも使う）。ボタンを押したときに呼ぶ
-    async start(video)
+    // 今使っているカメラの deviceId（使っていなければ空）
+    get deviceId()
+    {
+        return this.stream?.getVideoTracks()[0]?.getSettings().deviceId ?? '';
+    }
+
+    // video は映像を流す <video>（画面の小窓にも使う）。deviceId が空なら、ブラウザが選ぶカメラを使う
+    async start(video, deviceId = '')
     {
         if (this.isRunning) return;
         if (location.protocol === 'file:') {
@@ -51,7 +57,8 @@ class FaceTracker
         }
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('このブラウザではカメラを使えません');
         if (this.landmarker === null) this.landmarker = await FaceTracker.createLandmarker();
-        const constraints = { video: { width: kCameraWidth, height: kCameraHeight, facingMode: 'user' }, audio: false };
+        const which = deviceId !== '' ? { deviceId: { exact: deviceId } } : { facingMode: 'user' };
+        const constraints = { video: { width: kCameraWidth, height: kCameraHeight, ...which }, audio: false };
         this.stream = await navigator.mediaDevices.getUserMedia(constraints);
         this.video = video;
         video.srcObject = this.stream;
