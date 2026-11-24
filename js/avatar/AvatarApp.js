@@ -1,7 +1,8 @@
 'use strict';
 
-// 最初に読むアバター（公開版・exe 版。file:// では読めないので「絵を開く」から選んでもらう）
-const kDefaultAvatarUrl = 'models/vtuber-avatar.dotart';
+// 最初に読むアバター（公開版・exe 版。file:// では読めないので「絵を開く」から選んでもらう）。
+// 8192 版を読めない端末（iPhone など、大きな絵を作れないもの）は 4096 版にする
+const kDefaultAvatarUrls = Object.freeze(['models/vtuber-avatar.dotart', 'models/vtuber-avatar-4096.dotart']);
 const kAvatarSettingsKey = 'dotAvatarSettings';
 const kAvatarBackgrounds = Object.freeze(['green', 'blue', 'transparent', 'dark']);
 const kDefaultAvatarBackground = 'green';
@@ -79,28 +80,38 @@ class AvatarApp
             this.showMessage('「絵を開く」から、アバターの作業ファイル（.dotart）を選んでください');
             return;
         }
-        try {
-            const response = await fetch(kDefaultAvatarUrl);
-            if (!response.ok) throw new Error(`読み込めませんでした（${response.status}）`);
-            await this.loadModel(await response.blob(), 'アバター');
-        } catch (error) {
-            this.showMessage(`最初のアバターを読めませんでした：${error.message}`);
+        let lastError = null;
+        for (const url of kDefaultAvatarUrls) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`読み込めませんでした（${response.status}）`);
+                this.showMessage('アバターを読んでいます…');
+                this.applyModel(await AvatarModel.fromBlob(await response.blob()), 'アバター');
+                return;
+            } catch (error) {
+                lastError = error;
+            }
         }
+        this.showMessage(`最初のアバターを読めませんでした：${lastError.message}`);
     }
 
     async loadModel(blob, label)
     {
         this.showMessage(`${label} を読んでいます…`);
         try {
-            const model = await AvatarModel.fromBlob(blob);
-            this.view.setModel(model);
-            const missing = model.missingRoleNames;
-            this.showMessage(missing.length === 0
-                ? `${label} を読みました`
-                : `${label} を読みました。動きに使うレイヤーが見つかりません：${missing.join('・')}`);
+            this.applyModel(await AvatarModel.fromBlob(blob), label);
         } catch (error) {
             this.showMessage(`開けませんでした：${error.message}`);
         }
+    }
+
+    applyModel(model, label)
+    {
+        this.view.setModel(model);
+        const missing = model.missingRoleNames;
+        this.showMessage(missing.length === 0
+            ? `${label} を読みました`
+            : `${label} を読みました。動きに使うレイヤーが見つかりません：${missing.join('・')}`);
     }
 
     async toggleCamera()

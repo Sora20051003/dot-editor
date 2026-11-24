@@ -61,5 +61,6 @@
     "js/play/LobbyView.js",
     "js/play/PixelImageView.js",
     "js/play/PlayApp.js",
+    "models/vtuber-avatar-4096.dotart",
     "models/vtuber-avatar.dotart"
 ]

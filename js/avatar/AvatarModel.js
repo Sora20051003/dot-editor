@@ -28,21 +28,29 @@ class AvatarModel
     // 作業ファイル（.dotart）から作る。読めないときは ProjectFile が理由付きで例外を投げる
     static async fromBlob(blob)
     {
-        const project = await ProjectFile.decode(blob);
-        const { width, height } = project;
-        const scale = Math.min(1, kAvatarTextureSize / Math.max(width, height));
-        const size = { resizeWidth: Math.round(width * scale), resizeHeight: Math.round(height * scale), resizeQuality: 'high' };
         const parts = [];
-        for (const info of project.frames[0].layers) {
-            const role = AvatarModel.roleOf(info.name);
-            // 役目のあるレイヤーは、エディタで隠していても動きに使う（描くときに隠すことが多いため）
-            if (role === kAvatarHeadRole && !info.isVisible) continue;
-            if (role === 'body' && !info.isVisible) continue;
-            // 写しを作らずに、読み込んだ中身をそのまま絵にする（4096 だと1枚 64MB あるため）
-            const pixels = new Uint8ClampedArray(info.data.buffer, info.data.byteOffset, info.data.byteLength);
-            const image = await createImageBitmap(new ImageData(pixels, width, height), size);
-            parts.push({ name: info.name, role, image, opacity: info.opacity });
-        }
+        let size = null;
+        const sizeFor = (width, height) => {
+            const scale = Math.min(1, kAvatarTextureSize / Math.max(width, height));
+            return { resizeWidth: Math.round(width * scale), resizeHeight: Math.round(height * scale), resizeQuality: 'high' };
+        };
+        // 1枚読むたびに縮めて、元の中身は手放す（8192 の 9 枚を同時に持つと 2GB を超えるため）。
+        // 見るだけなので、エディタのメモリの上限では弾かない（メモリの少ない PC・Firefox・Safari でも開ける）
+        const project = await ProjectFile.decode(blob, {
+            isViewOnly: true,
+            onLayer: async (info, frameIndex, header) => {
+                if (frameIndex !== 0) return;
+                const role = AvatarModel.roleOf(info.name);
+                // 役目のあるレイヤーは、エディタで隠していても動きに使う（描くときに隠すことが多いため）
+                const isPlainLayer = role === kAvatarHeadRole || role === 'body';
+                if (isPlainLayer && !info.isVisible) return;
+                size ??= sizeFor(header.width, header.height);
+                const pixels = new Uint8ClampedArray(info.data.buffer, info.data.byteOffset, info.data.byteLength);
+                const image = await createImageBitmap(new ImageData(pixels, header.width, header.height), size);
+                parts.push({ name: info.name, role, image, opacity: info.opacity });
+            },
+        });
+        size ??= sizeFor(project.width, project.height);
         return new AvatarModel(parts, size.resizeWidth, size.resizeHeight);
     }
 

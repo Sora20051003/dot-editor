@@ -11,6 +11,69 @@ const kProjectVersionSingleFrame = 1;
 const kProjectExtension = '.dotart';
 const kJsonLengthBytes = 4;
 const kRgbaBytes = 4;
+// 保存するときに一度に圧縮へ流す量。全レイヤーの写しを一度に作らないよう、少しずつ写して流す
+const kEncodeChunkBytes = 16 * 1024 * 1024;
+// 情報（JSON）の長さの上限。壊れたファイルで巨大なメモリを取らないため
+const kMaxProjectHeaderBytes = 16 * 1024 * 1024;
+// 見るだけ（アバターの画面）で開ける大きさの上限。エディタの上限（iPhone は 4096）やメモリの上限とは別にする。
+// 1枚ずつ縮めて使うので、絵の全部を同時には持たないため
+const kMaxProjectViewSize = 8192;
+const kBrokenProjectMessage = 'ファイルが壊れているか、作業ファイルではありません';
+const kTruncatedProjectMessage = 'ファイルが途中で切れているか、壊れています';
+
+// 流れてくるバイト列から、決まった長さずつ取り出す（ProjectFile.decode 用）
+class ProjectByteReader
+{
+    constructor(stream)
+    {
+        this.reader = stream.getReader();
+        this.chunk = new Uint8Array(0);
+        this.offset = 0;
+    }
+
+    // length バイトを新しい配列で返す。途中でファイルが終わったら null
+    async read(length)
+    {
+        const target = new Uint8Array(length);
+        let filled = 0;
+        while (filled < length) {
+            if (this.offset >= this.chunk.length && !(await this.pullChunk())) return null;
+            const count = Math.min(length - filled, this.chunk.length - this.offset);
+            target.set(this.chunk.subarray(this.offset, this.offset + count), filled);
+            filled += count;
+            this.offset += count;
+        }
+        return target;
+    }
+
+    async isAtEnd()
+    {
+        while (this.offset >= this.chunk.length) {
+            if (!(await this.pullChunk())) return true;
+        }
+        return false;
+    }
+
+    // 次のかたまりを取る。もうなければ false。gzip として読めないときは理由付きで例外
+    async pullChunk()
+    {
+        let result;
+        try {
+            result = await this.reader.read();
+        } catch {
+            throw new Error(kBrokenProjectMessage);
+        }
+        if (result.done) return false;
+        this.chunk = result.value;
+        this.offset = 0;
+        return true;
+    }
+
+    release()
+    {
+        this.reader.cancel().catch(() => {});
+    }
+}
 
 const ProjectFile = {
     isProjectFileName(name)
@@ -41,44 +104,63 @@ const ProjectFile = {
         const prefix = new Uint8Array(kProjectMagic.length + kJsonLengthBytes);
         prefix.set(new TextEncoder().encode(kProjectMagic));
         new DataView(prefix.buffer).setUint32(kProjectMagic.length, json.length, true);
-        const parts = [prefix, json, ...frameSet.allLayers().map((l) => l.canvas.imageData.data)];
-        // 8192×8192 や多くのコマを持つと数百 MB になるので、ストリームで少しずつ圧縮する
-        const stream = new Blob(parts).stream().pipeThrough(new CompressionStream('gzip'));
-        return new Response(stream).blob();
+        // 8192×8192 で 9 枚だと 2GB を超えるので、全部を1つにまとめず、少しずつ写して圧縮へ流す
+        const chunks = ProjectFile.encodeChunks([prefix, json], frameSet.allLayers());
+        const source = new ReadableStream({
+            pull(controller)
+            {
+                const next = chunks.next();
+                if (next.done) controller.close();
+                else controller.enqueue(next.value);
+            },
+        });
+        return new Response(source.pipeThrough(new CompressionStream('gzip'))).blob();
     },
 
-    // 戻り値は FrameSet.restore にそのまま渡せる形。読めないときは理由付きで例外を投げる
-    async decode(blob)
+    // 写して渡すのは、保存の途中で絵が描き変わっても、ファイルの中身が混ざらないようにするため
+    * encodeChunks(headParts, layers)
     {
-        const bytes = await ProjectFile.decompress(blob);
-        const jsonStart = kProjectMagic.length + kJsonLengthBytes;
-        if (bytes.length < jsonStart || ProjectFile.readMagic(bytes) !== kProjectMagic) {
-            throw new Error('ドット絵エディタの作業ファイルではありません');
-        }
-        const jsonLength = new DataView(bytes.buffer).getUint32(kProjectMagic.length, true);
-        const header = ProjectFile.parseHeader(bytes.subarray(jsonStart, jsonStart + jsonLength));
-        const layerBytes = header.width * header.height * kRgbaBytes;
-        const layerCount = header.frames.reduce((sum, frame) => sum + frame.layers.length, 0);
-        let offset = jsonStart + jsonLength;
-        if (bytes.length !== offset + layerBytes * layerCount) {
-            throw new Error('ファイルが途中で切れているか、壊れています');
-        }
-        for (const frame of header.frames) {
-            for (const info of frame.layers) {
-                info.data = bytes.subarray(offset, offset + layerBytes);
-                offset += layerBytes;
+        yield* headParts;
+        for (const layer of layers) {
+            const data = layer.canvas.imageData.data;
+            for (let offset = 0; offset < data.length; offset += kEncodeChunkBytes) {
+                yield data.slice(offset, offset + kEncodeChunkBytes);
             }
         }
-        return header;
     },
 
-    async decompress(blob)
+    // 戻り値は FrameSet.restore にそのまま渡せる形。読めないときは理由付きで例外を投げる。
+    // options.isViewOnly：見るだけ（アバター）。エディタのメモリ・大きさの上限で弾かない
+    // options.onLayer(info, frameIndex, header)：1枚読むたびに呼ぶ。渡したら中身は持ち続けない（全部を同時に持たないため）
+    async decode(blob, options = {})
     {
+        const isViewOnly = options.isViewOnly === true;
+        // 圧縮を解きながらレイヤー1枚ずつ取り出す。全体を一度に広げると、8192 の 9 枚で 2GB を超えるため
+        const reader = new ProjectByteReader(blob.stream().pipeThrough(new DecompressionStream('gzip')));
         try {
-            const stream = blob.stream().pipeThrough(new DecompressionStream('gzip'));
-            return new Uint8Array(await new Response(stream).arrayBuffer());
-        } catch {
-            throw new Error('ファイルが壊れているか、作業ファイルではありません');
+            const prefix = await reader.read(kProjectMagic.length + kJsonLengthBytes);
+            if (prefix === null || ProjectFile.readMagic(prefix) !== kProjectMagic) {
+                throw new Error('ドット絵エディタの作業ファイルではありません');
+            }
+            const jsonLength = new DataView(prefix.buffer).getUint32(kProjectMagic.length, true);
+            if (jsonLength > kMaxProjectHeaderBytes) throw new Error(kBrokenProjectMessage);
+            const json = await reader.read(jsonLength);
+            if (json === null) throw new Error(kTruncatedProjectMessage);
+            const header = ProjectFile.parseHeader(json, isViewOnly);
+            const layerBytes = header.width * header.height * kRgbaBytes;
+            for (const [frameIndex, frame] of header.frames.entries()) {
+                for (const info of frame.layers) {
+                    info.data = await reader.read(layerBytes);
+                    if (info.data === null) throw new Error(kTruncatedProjectMessage);
+                    if (options.onLayer === undefined) continue;
+                    await options.onLayer(info, frameIndex, header);
+                    info.data = null;
+                }
+            }
+            if (!(await reader.isAtEnd())) throw new Error(kTruncatedProjectMessage);
+            return header;
+        } finally {
+            reader.release();
         }
     },
 
@@ -87,7 +169,7 @@ const ProjectFile = {
         return new TextDecoder().decode(bytes.subarray(0, kProjectMagic.length));
     },
 
-    parseHeader(jsonBytes)
+    parseHeader(jsonBytes, isViewOnly = false)
     {
         let header;
         try {
@@ -95,9 +177,9 @@ const ProjectFile = {
         } catch {
             throw new Error('作業ファイルの情報が壊れています');
         }
-        ProjectFile.validateHeader(header);
+        ProjectFile.validateHeader(header, isViewOnly ? kMaxProjectViewSize : kMaxCanvasSize);
         const rawFrames = ProjectFile.rawFramesOf(header);
-        ProjectFile.validateLayerCounts(header.width, header.height, rawFrames);
+        ProjectFile.validateLayerCounts(header.width, header.height, rawFrames, isViewOnly);
         return {
             width: header.width,
             height: header.height,
@@ -123,16 +205,17 @@ const ProjectFile = {
         return { activeIndex, layers };
     },
 
-    validateLayerCounts(width, height, rawFrames)
+    validateLayerCounts(width, height, rawFrames, isViewOnly = false)
     {
         if (rawFrames.length < 1 || rawFrames.length > kMaxFrameCount) {
             throw new Error(`コマの数が正しくありません（1〜${kMaxFrameCount}）`);
         }
-        const maxLayers = LayerStack.maxLayersFor(width, height);
+        const maxLayers = isViewOnly ? kMaxLayerCount : LayerStack.maxLayersFor(width, height);
         const isCountOk = (f) => Array.isArray(f?.layers) && f.layers.length >= 1 && f.layers.length <= maxLayers;
         if (!rawFrames.every(isCountOk)) {
             throw new Error(`レイヤーの数が正しくありません（1コマ 1〜${maxLayers} 枚）`);
         }
+        if (isViewOnly) return;
         const total = rawFrames.reduce((sum, f) => sum + f.layers.length, 0);
         const limit = LayerStack.memoryLayerLimit(width, height);
         if (total > limit) {
@@ -140,7 +223,7 @@ const ProjectFile = {
         }
     },
 
-    validateHeader(header)
+    validateHeader(header, maxSize)
     {
         if (header === null || typeof header !== 'object' || header.format !== kProjectFormat) {
             throw new Error('ドット絵エディタの作業ファイルではありません');
@@ -148,9 +231,9 @@ const ProjectFile = {
         if (header.version !== kProjectVersion && header.version !== kProjectVersionSingleFrame) {
             throw new Error(`この版（${header.version}）の作業ファイルは開けません。新しいドット絵エディタで開いてください`);
         }
-        const isSize = (v) => Number.isInteger(v) && v >= kMinCanvasSize && v <= kMaxCanvasSize;
+        const isSize = (v) => Number.isInteger(v) && v >= kMinCanvasSize && v <= maxSize;
         if (!isSize(header.width) || !isSize(header.height)) {
-            throw new Error(`マス目の数が 1〜${kMaxCanvasSize} の範囲外です（${header.width}×${header.height}）`);
+            throw new Error(`マス目の数が 1〜${maxSize} の範囲外です（${header.width}×${header.height}）`);
         }
     },
 
