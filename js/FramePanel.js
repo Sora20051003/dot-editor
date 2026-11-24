@@ -53,8 +53,9 @@ class FramePanel
     // 先頭は、候補にない速さを打ったとき用の空の項目
     static createPresetOptions()
     {
-        const custom = new Option('候補から選ぶ', '');
-        const presets = kFpsPresets.map((fps) => new Option(`${fps} コマ/秒`, String(fps)));
+        // 帯が折り返さないよう、文字は数字だけにする（単位は横の「コマ/秒」）
+        const custom = new Option('候補', '');
+        const presets = kFpsPresets.map((fps) => new Option(String(fps), String(fps)));
         return [custom, ...presets];
     }
 
