@@ -14,6 +14,12 @@ const kPoseSmoothing = 0.6;
 const kCalibrationFrames = 15;
 // 顔を見失ってからこの時間がたったら、正面の止まった形に戻す
 const kFaceLostMs = 500;
+// MediaPipe の回転の向きを、鏡で見たときの向き（今までの鼻のずれと同じ符号）に合わせる。テスト用の台形の映像で確かめた
+// （鼻を右へずらすと回転の左右は増え、鼻のずれは減った。下へずらすと回転の上下は減り、鼻のずれは増えた。どちらも逆）
+const kMatrixYawSign = -1;
+const kMatrixPitchSign = -1;
+// 回転が取れないときに、鼻のずれ（両目の幅に対する割合）を角度に直す目安（同じテストで、ずれ 0.074 が約 5.4°）
+const kNoseRatioToRadians = 1.3;
 
 // カメラの映像から、頭の傾き・向き・目の閉じ具合・口の開き具合を読み取る。
 // 値は鏡に映したとき（配信でふつうの向き）に合わせる。読み取った以上に動かさないよう、ならすだけで増やさない
@@ -31,7 +37,7 @@ class FaceTracker
         this.state = FaceTracker.neutralState();
     }
 
-    // roll：頭の傾き（ラジアン。画面で時計回りが正）。yaw / pitch：正面からのずれ（両目の幅に対する割合）
+    // roll：頭の傾き（ラジアン。画面で時計回りが正）。yaw / pitch：正面からの左右・上下の向き（ラジアン）
     static neutralState()
     {
         return { hasFace: false, roll: 0, yaw: 0, pitch: 0, eyesClosed: 0, jawOpen: 0 };
@@ -93,6 +99,8 @@ class FaceTracker
             runningMode: 'VIDEO',
             numFaces: 1,
             outputFaceBlendshapes: true,
+            // 頭の回転を角度で読むため（鼻の位置だけでは大きく向いたときの角度が分からない）
+            outputFacialTransformationMatrixes: true,
         });
         // GPU が使えない PC もあるので、だめなら CPU で動かす
         try {
@@ -114,11 +122,12 @@ class FaceTracker
             return;
         }
         this.lastFaceAt = now;
-        const measured = FaceTracker.measure(landmarks, result.faceBlendshapes?.[0]);
+        const measured = FaceTracker.measure(landmarks, result.faceBlendshapes?.[0], result.facialTransformationMatrixes?.[0]);
         this.applyMeasured(measured);
     }
 
-    static measure(landmarks, blendshapes)
+    // matrix：MediaPipe の頭の回転（4×4、列ごとに並ぶ）。あれば左右・上下の向きを角度（ラジアン）で読む
+    static measure(landmarks, blendshapes, matrix)
     {
         const a = landmarks[kLandmarkEyeOuterA];
         const b = landmarks[kLandmarkEyeOuterB];
@@ -130,13 +139,32 @@ class FaceTracker
         const midX = (a.x + b.x) / 2 * kCameraWidth;
         const midY = (a.y + b.y) / 2 * kCameraHeight;
         const score = (name) => blendshapes?.categories.find((c) => c.categoryName === name)?.score ?? 0;
+        // 回転が取れないときは、両目の幅に対する鼻のずれから大まかな角度にする
+        const turn = FaceTracker.turnFromMatrix(matrix) ?? {
+            yaw: -(nose.x * kCameraWidth - midX) / eyeWidth * kNoseRatioToRadians,
+            pitch: (nose.y * kCameraHeight - midY) / eyeWidth * kNoseRatioToRadians,
+        };
         return {
             // 鏡に映すと回る向きが逆になる
             roll: -Math.atan2(dy, dx),
-            yaw: -(nose.x * kCameraWidth - midX) / eyeWidth,
-            pitch: (nose.y * kCameraHeight - midY) / eyeWidth,
+            yaw: turn.yaw,
+            pitch: turn.pitch,
             eyesClosed: (score('eyeBlinkLeft') + score('eyeBlinkRight')) / 2,
             jawOpen: score('jawOpen'),
+        };
+    }
+
+    // 顔の正面の向き（回転の 3 列目）から、左右（yaw：鏡で見て右を向くと正）と上下（pitch：下を向くと正）の角度を出す
+    static turnFromMatrix(matrix)
+    {
+        const m = matrix?.data;
+        if (m === undefined || m.length < 16) return null;
+        const forwardX = m[8];
+        const forwardY = m[9];
+        const forwardZ = m[10];
+        return {
+            yaw: kMatrixYawSign * Math.atan2(forwardX, forwardZ),
+            pitch: kMatrixPitchSign * Math.atan2(forwardY, Math.hypot(forwardX, forwardZ)),
         };
     }
 

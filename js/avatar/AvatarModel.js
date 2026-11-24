@@ -13,6 +13,14 @@ const kAvatarRoleNames = Object.freeze({
 });
 // 名前が上のどれでもないレイヤーは、頭と一緒にゆれる
 const kAvatarHeadRole = 'head';
+// 頭が回ったときに見せる奥行き（手前ほど向いた方へ大きくずれ、奥はずれが逆になる）。名前に含まれる言葉で決める
+const kAvatarDepthFront = 0.7;
+const kAvatarDepthFrontHair = 0.5;
+const kAvatarDepthDefault = 0.3;
+const kAvatarDepthBack = -0.3;
+const kAvatarFrontWords = Object.freeze(['眼鏡', 'めがね', 'メガネ']);
+const kAvatarFrontHairWords = Object.freeze(['前髪']);
+const kAvatarBackWords = Object.freeze(['後ろ', 'うしろ']);
 
 // アバターの部品（作業ファイルの1コマ目のレイヤー）。下から順に並ぶ
 class AvatarModel
@@ -47,7 +55,7 @@ class AvatarModel
                 size ??= sizeFor(header.width, header.height);
                 const pixels = new Uint8ClampedArray(info.data.buffer, info.data.byteOffset, info.data.byteLength);
                 const image = await createImageBitmap(new ImageData(pixels, header.width, header.height), size);
-                parts.push({ name: info.name, role, image, opacity: info.opacity });
+                parts.push({ name: info.name, role, depth: AvatarModel.depthOf(info.name, role), image, opacity: info.opacity });
             },
         });
         size ??= sizeFor(project.width, project.height);
@@ -59,6 +67,17 @@ class AvatarModel
         const normalized = name.trim().replace(/\s+/g, ' ');
         const found = Object.entries(kAvatarRoleNames).find(([, roleName]) => roleName === normalized);
         return found === undefined ? kAvatarHeadRole : found[0];
+    }
+
+    // 当てはまらない名前（ヘッドホン・顔など）は顔と同じ奥行きにする。名前を変えなければ今までの絵もそのまま動く
+    static depthOf(name, role)
+    {
+        const has = (words) => words.some((word) => name.includes(word));
+        if (role !== kAvatarHeadRole && role !== 'body') return kAvatarDepthFront;
+        if (has(kAvatarFrontWords)) return kAvatarDepthFront;
+        if (has(kAvatarFrontHairWords)) return kAvatarDepthFrontHair;
+        if (has(kAvatarBackWords)) return kAvatarDepthBack;
+        return kAvatarDepthDefault;
     }
 
     hasRole(role)

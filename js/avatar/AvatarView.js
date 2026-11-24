@@ -5,11 +5,18 @@ const kAvatarMargin = 0.04;
 // 頭を傾けるときの中心＝首の位置（絵の幅・高さに対する割合）
 const kHeadPivotX = 0.5;
 const kHeadPivotY = 0.62;
-// 頭の傾きの上限。読み取りの間違いで首が折れたように見えないよう、ここで止める
-const kMaxHeadRoll = 30 * Math.PI / 180;
-// 顔の向き（両目の幅に対する鼻のずれ）を、頭の部品をずらす量（絵の幅・高さに対する割合）に直す係数と上限
-const kHeadShiftPerTurn = 0.06;
-const kMaxHeadShift = 0.03;
+// 頭の傾き・左右・上下の上限。読み取りの間違いで首が折れたように見えないよう、ここで止める
+const kMaxHeadRoll = 45 * Math.PI / 180;
+const kMaxHeadYaw = 45 * Math.PI / 180;
+const kMaxHeadPitch = 30 * Math.PI / 180;
+// 左右・上下を向いたとき、奥行き 1 の部品をずらす量（絵の幅・高さに対する割合。sin(角度) に掛ける）。
+// 部品ごとに奥行き（AvatarModel.depthOf）を掛けるので、手前と奥でずれが変わり、頭が回って見える
+// 左右は、45° で目が顔の輪郭からはみ出さない大きさにしている
+const kTurnShiftX = 0.08;
+const kTurnShiftY = 0.07;
+// 向いた方向に頭の幅・高さを縮める割合（横を向くと顔が細く見えるため）
+const kTurnSquashX = 0.12;
+const kTurnSquashY = 0.08;
 
 // アバターの部品を重ねて描く。自分では動かず、カメラで読み取った頭の向き・目・口のとおりにだけ動かす
 class AvatarView
@@ -43,7 +50,7 @@ class AvatarView
         for (const part of model.parts) {
             if (!this.isPartShown(part, state)) continue;
             ctx.save();
-            if (part.role !== 'body') this.applyHeadPose(state);
+            if (part.role !== 'body') this.applyHeadPose(state, part.depth ?? 0);
             ctx.globalAlpha = part.opacity;
             ctx.drawImage(part.image, 0, 0);
             ctx.restore();
@@ -63,17 +70,21 @@ class AvatarView
         }
     }
 
-    applyHeadPose(state)
+    // 首を中心に傾け、傾いた頭の向きのまま、奥行きに応じてずらし、向いた方へ縮める
+    applyHeadPose(state, depth)
     {
         const { width, height } = this.model;
         const clamp = (value, limit) => Math.max(-limit, Math.min(limit, value));
         const pivotX = width * kHeadPivotX;
         const pivotY = height * kHeadPivotY;
-        const shiftX = clamp(state.yaw * kHeadShiftPerTurn, kMaxHeadShift) * width;
-        const shiftY = clamp(state.pitch * kHeadShiftPerTurn, kMaxHeadShift) * height;
-        this.ctx.translate(pivotX + shiftX, pivotY + shiftY);
-        this.ctx.rotate(clamp(state.roll, kMaxHeadRoll));
-        this.ctx.translate(-pivotX, -pivotY);
+        const turnX = Math.sin(clamp(state.yaw, kMaxHeadYaw));
+        const turnY = Math.sin(clamp(state.pitch, kMaxHeadPitch));
+        const ctx = this.ctx;
+        ctx.translate(pivotX, pivotY);
+        ctx.rotate(clamp(state.roll, kMaxHeadRoll));
+        ctx.translate(depth * turnX * kTurnShiftX * width, depth * turnY * kTurnShiftY * height);
+        ctx.scale(1 - kTurnSquashX * Math.abs(turnX), 1 - kTurnSquashY * Math.abs(turnY));
+        ctx.translate(-pivotX, -pivotY);
     }
 
     fitScale()
