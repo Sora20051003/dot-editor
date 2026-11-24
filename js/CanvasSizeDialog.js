@@ -2,7 +2,7 @@
 
 const kMinCanvasSize = 1;
 
-// マス目の数（横・縦）を決めるダイアログ。1〜4096 マス
+// マス目の数（横・縦）を決めるダイアログ。1〜kMaxCanvasSize マス
 class CanvasSizeDialog
 {
     // onConfirm(width, height, isKeepContent)
@@ -15,6 +15,12 @@ class CanvasSizeDialog
         this.lockInput = document.getElementById('chkSquare');
         this.widthInput.max = String(kMaxCanvasSize);
         this.heightInput.max = String(kMaxCanvasSize);
+        // iPhone・iPad では上限が低いので、超えるボタンは隠す
+        for (const button of this.dialog.querySelectorAll('[data-size]')) {
+            button.hidden = Number(button.dataset.size) > kMaxCanvasSize;
+        }
+        document.getElementById('sizeLimitHint').textContent =
+            `1〜${kMaxCanvasSize} マスまで。変えると取り消しの履歴は消えます`;
         this.bindEvents();
     }
 

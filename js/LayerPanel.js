@@ -41,9 +41,7 @@ class LayerPanel
     runAndRefresh(action)
     {
         if (!action()) {
-            if (!this.layers.canAdd) {
-                this.handlers.onMessage(`この大きさではレイヤーは ${this.layers.maxLayers} 枚までです`);
-            }
+            if (!this.layers.canAdd) this.handlers.onMessage(this.layers.addLimitMessage);
             return;
         }
         this.render();

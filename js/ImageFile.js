@@ -1,9 +1,14 @@
 'use strict';
 
-const kMaxCanvasSize = 4096;
+// iPhone・iPad の Safari は約 4096×4096 より大きいキャンバスを表示できないので、そこだけ上限を下げる
+const kIsAppleMobile = /iPhone|iPad|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const kMaxCanvasSize = kIsAppleMobile ? 4096 : 8192;
 // ブラウザが作れるキャンバスの1辺の上限（Chrome / Edge）
 const kMaxExportSide = 16384;
 const kRevokeDelayMs = 1000;
+// コマの PNG の番号の桁数（001 など）。並べたときに順番どおりに並ぶように 0 で埋める
+const kFrameNumberDigits = 3;
 
 // PNG の読み込みと保存
 const ImageFile = {
@@ -31,6 +36,26 @@ const ImageFile = {
     // 見えているレイヤーだけを重ねた1枚で保存する
     async savePng(layers, scale, fileName)
     {
+        ImageFile.download(await ImageFile.toPngBlob(layers, scale), fileName);
+    },
+
+    // アニメの全コマを PNG にして、1つの ZIP で保存する。中は 名前_001.png, 名前_002.png …
+    // sources は FrameSet.frameImageSource の並び
+    async saveFramesZip(sources, scale, baseName)
+    {
+        const zip = new ZipWriter();
+        const digits = Math.max(kFrameNumberDigits, String(sources.length).length);
+        for (let i = 0; i < sources.length; i++) {
+            const blob = await ImageFile.toPngBlob(sources[i], scale);
+            const number = String(i + 1).padStart(digits, '0');
+            zip.add(`${baseName}_${number}.png`, new Uint8Array(await blob.arrayBuffer()));
+        }
+        ImageFile.download(zip.toBlob(), `${baseName}_frames.zip`);
+    },
+
+    // layers は LayerStack か、同じく width・height・visibleLayers() を持つもの
+    async toPngBlob(layers, scale)
+    {
         const width = layers.width * scale;
         const height = layers.height * scale;
         if (width > kMaxExportSide || height > kMaxExportSide) {
@@ -39,7 +64,7 @@ const ImageFile = {
         const canvas = ImageFile.createScaledCanvas(ImageFile.composeLayers(layers), scale);
         const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
         if (blob === null) throw new Error('PNG を作れませんでした');
-        ImageFile.download(blob, fileName);
+        return blob;
     },
 
     composeLayers(layers)

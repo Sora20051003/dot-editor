@@ -2,7 +2,8 @@
 
 const kBaseLayerName = '下地';
 const kMaxLayerCount = 32;
-// レイヤー全部の絵に使ってよいメモリ。4096×4096 は1枚 64MB なので約 12 枚
+// レイヤー全部の絵に使ってよいメモリ（アニメの全コマの合計）。
+// 4096×4096 は1枚 64MB なので約 12 枚、8192×8192 は1枚 256MB なので 3 枚
 const kLayerMemoryBudget = 768 * 1024 * 1024;
 const kBytesPerPixel = 4;
 
@@ -25,6 +26,9 @@ class LayerStack
     {
         this.nextId = 1;
         this.nextNumber = 1;
+        // 今のコマ以外（アニメのほかのコマ）にあるレイヤーの枚数。メモリの上限は全コマの合計で数えるため。
+        // アニメを使わないとき（通信モードの絵など）は 0 のまま
+        this.countOutsideLayers = () => 0;
         this.resetDefault(width, height);
     }
 
@@ -53,15 +57,36 @@ class LayerStack
         return LayerStack.maxLayersFor(this.width, this.height);
     }
 
+    // 1コマに重ねられる枚数
     static maxLayersFor(width, height)
     {
+        return Math.min(kMaxLayerCount, LayerStack.memoryLayerLimit(width, height));
+    }
+
+    // メモリの上限から決まる、全コマ合計の枚数
+    static memoryLayerLimit(width, height)
+    {
         const bytesPerLayer = width * height * kBytesPerPixel;
-        return Math.max(1, Math.min(kMaxLayerCount, Math.floor(kLayerMemoryBudget / bytesPerLayer)));
+        return Math.max(1, Math.floor(kLayerMemoryBudget / bytesPerLayer));
     }
 
     get canAdd()
     {
-        return this.layers.length < this.maxLayers;
+        const total = this.layers.length + this.countOutsideLayers();
+        return this.layers.length < this.maxLayers && total < LayerStack.memoryLayerLimit(this.width, this.height);
+    }
+
+    // レイヤーを足せないときの説明
+    get addLimitMessage()
+    {
+        if (this.layers.length >= this.maxLayers) return `この大きさではレイヤーは ${this.maxLayers} 枚までです`;
+        const limit = LayerStack.memoryLayerLimit(this.width, this.height);
+        return `この大きさでは、全部のコマを合わせてレイヤーは ${limit} 枚までです`;
+    }
+
+    static visibleOf(layers)
+    {
+        return layers.filter((layer) => layer.isVisible && layer.opacity > 0);
     }
 
     get canRemove()
@@ -98,11 +123,11 @@ class LayerStack
         this.activeIndex = 0;
     }
 
-    // 作業ファイル（ProjectFile.decode の結果）から全レイヤーを作り直す
-    restore(project)
+    // 作業ファイルの1コマ分（ProjectFile.decode の frames の1つ）からレイヤーを作る。
+    // 並びへの組み込みは呼ぶ側（FrameSet）がする
+    buildLayers(width, height, layerInfos)
     {
-        const { width, height } = project;
-        this.layers = project.layers.map((info) => {
+        return layerInfos.map((info) => {
             const layer = this.createLayer(info.name, width, height);
             layer.canvas.imageData.data.set(info.data);
             layer.canvas.markAllDirty();
@@ -110,14 +135,35 @@ class LayerStack
             layer.opacity = info.opacity;
             return layer;
         });
-        this.activeIndex = project.activeIndex;
-        this.nextNumber = this.layers.length;
     }
 
-    // 大きくするとメモリが足りなくなる枚数のときは呼ぶ側で止める（maxLayersFor で確かめる）
-    resize(width, height)
+    // 中身が空の同じ形（名前・表示・不透明度）のレイヤーを作る。アニメのコマを足すとき用
+    buildBlankLike(sourceLayers)
     {
-        for (const layer of this.layers) layer.canvas.resize(width, height);
+        return sourceLayers.map((source) => {
+            const layer = this.createLayer(source.name, this.width, this.height);
+            layer.isVisible = source.isVisible;
+            layer.opacity = source.opacity;
+            return layer;
+        });
+    }
+
+    // 絵ごと写したレイヤーを作る。アニメのコマを複製するとき用
+    buildCopies(sourceLayers)
+    {
+        return sourceLayers.map((source) => {
+            const layer = this.buildBlankLike([source])[0];
+            layer.canvas.pixels.set(source.canvas.pixels);
+            layer.canvas.markAllDirty();
+            return layer;
+        });
+    }
+
+    // 表示するレイヤーの並びを差し替える（アニメでコマを替えるとき）
+    load(layers, activeIndex)
+    {
+        this.layers = layers;
+        this.activeIndex = Math.min(Math.max(0, activeIndex), layers.length - 1);
     }
 
     setActive(index)
@@ -193,6 +239,6 @@ class LayerStack
 
     visibleLayers()
     {
-        return this.layers.filter((layer) => layer.isVisible && layer.opacity > 0);
+        return LayerStack.visibleOf(this.layers);
     }
 }

@@ -6,16 +6,19 @@ const kBytesPerRecordedPixel = 12;  // 位置・前の色・後の色を 4 バ�
 // 長さが事前に分からない記録用。普通の配列より大きなサイズで軽い
 class GrowableUint32
 {
-    constructor()
+    // maxCapacity より大きくは広げない（1操作で記録するマスは絵のマスの数を超えないため。
+    // 8192×8192 を塗りつぶしたとき、倍に広げて余分なメモリを取らないように）
+    constructor(maxCapacity)
     {
-        this.data = new Uint32Array(kGrowableInitialCapacity);
+        this.maxCapacity = maxCapacity;
+        this.data = new Uint32Array(Math.min(kGrowableInitialCapacity, maxCapacity));
         this.length = 0;
     }
 
     push(value)
     {
         if (this.length === this.data.length) {
-            const next = new Uint32Array(this.data.length * 2);
+            const next = new Uint32Array(Math.min(this.data.length * 2, this.maxCapacity));
             next.set(this.data);
             this.data = next;
         }
@@ -27,13 +30,15 @@ class GrowableUint32
         return this.data[index];
     }
 
+    // ちょうど満杯なら写さずにそのまま渡す（大きな絵の全体を塗ったときの写しを省く）
     toArray()
     {
+        if (this.length === this.data.length) return this.data;
         return this.data.slice(0, this.length);
     }
 }
 
-// 取り消し・やり直し。4096×4096 でも扱えるよう、絵全体の写しではなく
+// 取り消し・やり直し。8192×8192 でも扱えるよう、絵全体の写しではなく
 // 「変わったマスと前後の色」だけを1操作ぶん記録する。
 // 1回の操作は1枚のレイヤー（PixelCanvas）だけを変える前提で、どのレイヤーかも一緒に持つ。
 class EditHistory
@@ -75,7 +80,12 @@ class EditHistory
 
     static createRecording(pixelCanvas)
     {
-        return { canvas: pixelCanvas, indices: new GrowableUint32(), oldColors: new GrowableUint32() };
+        const pixelCount = pixelCanvas.width * pixelCanvas.height;
+        return {
+            canvas: pixelCanvas,
+            indices: new GrowableUint32(pixelCount),
+            oldColors: new GrowableUint32(pixelCount),
+        };
     }
 
     record(index, oldColor)
@@ -173,6 +183,14 @@ class EditHistory
         this.undoStack = this.undoStack.filter(isKept);
         this.redoStack = this.redoStack.filter(isKept);
         this.totalBytes = [...this.undoStack, ...this.redoStack].reduce((sum, e) => sum + e.byteSize, 0);
+    }
+
+    // 次に取り消す（isRedo ならやり直す）操作が変えるレイヤーの絵。無ければ null。
+    // アニメでは、その操作をしたコマへ先に移るために使う
+    peekCanvas(isRedo)
+    {
+        const stack = isRedo ? this.redoStack : this.undoStack;
+        return stack.length === 0 ? null : stack[stack.length - 1].canvas;
     }
 
     undo()

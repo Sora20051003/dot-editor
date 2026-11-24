@@ -1,10 +1,13 @@
 'use strict';
 
 const kDefaultCanvasSize = 32;
-// 取り消し履歴に使ってよいメモリ。4096×4096 を1回塗りつぶすと約 200MB
+// 取り消し履歴に使ってよいメモリ。4096×4096 を1回塗りつぶすと約 200MB。
+// 8192×8192 の全体を塗ると1回で超えるが、直前の1操作は必ず残す（EditHistory.trimToBudget）
 const kHistoryMaxBytes = 512 * 1024 * 1024;
 const kMessageDurationMs = 4000;
 const kDefaultBaseName = 'dotart';
+// コマの小さな絵をどこまで描き直すか
+const ThumbnailScope = Object.freeze({ None: 0, Current: 1, All: 2 });
 
 const kToolKeys = Object.freeze({
     b: ToolId.Pen,
@@ -21,6 +24,8 @@ class App
     constructor()
     {
         this.layers = new LayerStack(kDefaultCanvasSize, kDefaultCanvasSize);
+        // アニメのコマ。コマを替えると this.layers の中身が入れ替わる
+        this.frames = new FrameSet(this.layers);
         this.history = new EditHistory(kHistoryMaxBytes);
         this.painter = new Painter(this.layers, this.history);
         // 色が変わったらスマホの下のボタン列の色も変えるので、画面全体を更新する
@@ -38,6 +43,10 @@ class App
         this.sizeDialog = new CanvasSizeDialog((w, h, isKeep) => this.applyCanvasSize(w, h, isKeep));
         this.input = new CanvasInput(this.stage, this.view, this.createInputHandlers());
         this.mobile = new MobileLayout({ onUndo: () => this.undo(), onRedo: () => this.redo() });
+        this.framePanel = new FramePanel(this.frames, this.createFrameHandlers());
+        this.player = new AnimationPlayer((steps) => this.onPlayerStep(steps));
+        this.isOnionVisible = false;
+        this.thumbnailScope = ThumbnailScope.All;
         this.cursor = null;
         this.isRenderQueued = false;
         this.isUnsaved = false;
@@ -49,6 +58,8 @@ class App
         this.bindToolbar();
         this.bindToolPanel();
         this.bindWindow();
+        // コマの帯の高さで描く場所の大きさが決まるので、帯を先に作ってから全体表示を計算する
+        this.framePanel.render();
         this.view.resizeToContainer();
         this.view.fitTo(this.layers.width, this.layers.height);
         this.updateUi();
@@ -74,6 +85,23 @@ class App
         };
     }
 
+    createFrameHandlers()
+    {
+        return {
+            onSelect: (index) => this.selectFrame(index),
+            onAdd: () => this.runFrameAction(() => this.frames.addFrame(), true),
+            onDuplicate: () => this.runFrameAction(() => this.frames.duplicateFrame(), true),
+            onRemove: () => this.removeFrame(),
+            onMove: (direction) => this.runFrameAction(() => this.frames.moveFrame(direction), false),
+            onTogglePlay: () => this.togglePlay(),
+            onFpsChange: (value) => this.setFps(value),
+            onOnionChange: (isOn) => {
+                this.isOnionVisible = isOn;
+                this.requestRender();
+            },
+        };
+    }
+
     byId(id)
     {
         return document.getElementById(id);
@@ -85,6 +113,7 @@ class App
         this.byId('btnOpen').addEventListener('click', () => this.chooseFile());
         this.byId('fileInput').addEventListener('change', (e) => this.onFileChosen(e.target));
         this.byId('btnSave').addEventListener('click', () => this.save());
+        this.byId('btnSaveFrames').addEventListener('click', () => this.saveFrames());
         this.byId('btnSaveProject').addEventListener('click', (e) => this.saveProject(e.shiftKey));
         this.byId('btnUndo').addEventListener('click', () => this.undo());
         this.byId('btnRedo').addEventListener('click', () => this.redo());
@@ -138,6 +167,12 @@ class App
 
     onDrawBegin(x, y, modifiers)
     {
+        // 再生中は、どのコマに描いたか分からなくなるので、描かずに止めるだけにする
+        if (this.player.isPlaying) {
+            this.stopPlaying();
+            this.updateUi();
+            return;
+        }
         const color = this.colorPanel.getColor(modifiers.isSecondary);
         const override = modifiers.isAlt ? ToolId.Picker : null;
         const isPicking = (override || this.tools.toolId) === ToolId.Picker;
@@ -193,6 +228,11 @@ class App
             this.fitView();
         } else if (key === '[' || key === ']') {
             this.setBrushSize(this.tools.brushSize + (key === ']' ? 1 : -1));
+        } else if (key === ',' || key === '.') {
+            this.selectFrame(this.frames.currentIndex + (key === '.' ? 1 : -1));
+        } else if (key === 'enter' && !(e.target instanceof HTMLButtonElement)) {
+            // ボタンにフォーカスがあるときの Enter はそのボタンを押すので、ここでは何もしない
+            this.togglePlay();
         }
     }
 
@@ -266,15 +306,115 @@ class App
 
     undo()
     {
-        if (this.tools.isActive || !this.history.undo()) return;
-        this.isUnsaved = true;
-        this.updateUi();
+        this.applyHistory(false);
     }
 
     redo()
     {
-        if (this.tools.isActive || !this.history.redo()) return;
+        this.applyHistory(true);
+    }
+
+    // ほかのコマへの操作なら、そのコマに移ってから戻す（見えない所の絵が変わると分からないため）
+    applyHistory(isRedo)
+    {
+        const canvas = this.history.peekCanvas(isRedo);
+        if (this.tools.isActive || canvas === null) return;
+        this.stopPlaying();
+        const frameIndex = this.frames.indexOfCanvas(canvas);
+        const isOtherFrame = frameIndex >= 0 && frameIndex !== this.frames.currentIndex;
+        if (isOtherFrame) {
+            this.frames.select(frameIndex);
+            this.layerPanel.render();
+        }
+        const isDone = isRedo ? this.history.redo() : this.history.undo();
+        if (!isDone) return;
+        if (isOtherFrame) {
+            this.showMessage(`コマ ${frameIndex + 1} の操作を${isRedo ? 'やり直しました' : '取り消しました'}`);
+        }
         this.isUnsaved = true;
+        this.updateUi();
+    }
+
+    // ---- アニメのコマ ----
+
+    canChangeFrames()
+    {
+        return !this.tools.isActive && !this.player.isPlaying;
+    }
+
+    selectFrame(index)
+    {
+        if (this.tools.isActive) return;
+        this.stopPlaying();
+        if (!this.frames.select(index)) {
+            this.updateUi();
+            return;
+        }
+        this.afterFrameChanged(false);
+    }
+
+    // isAdding：足せなかったときに理由を出すか
+    runFrameAction(action, isAdding)
+    {
+        if (!this.canChangeFrames()) return;
+        if (!action()) {
+            if (isAdding) this.showMessage(this.frames.addLimitMessage);
+            return;
+        }
+        this.isUnsaved = true;
+        this.afterFrameChanged(true);
+    }
+
+    removeFrame()
+    {
+        if (!this.canChangeFrames() || this.frames.count <= 1) return;
+        const number = this.frames.currentIndex + 1;
+        if (!window.confirm(`コマ ${number} を削除しますか？（取り消しできません）`)) return;
+        const removedLayers = this.frames.removeFrame();
+        for (const layer of removedLayers) this.history.removeCanvas(layer.canvas);
+        this.isUnsaved = true;
+        this.afterFrameChanged(true);
+    }
+
+    // isListChanged：コマの数か並びが変わった（帯を作り直す）
+    afterFrameChanged(isListChanged)
+    {
+        if (isListChanged) {
+            this.framePanel.render();
+            this.thumbnailScope = ThumbnailScope.All;
+        }
+        this.layerPanel.render();
+        this.updateUi();
+    }
+
+    togglePlay()
+    {
+        if (this.player.isPlaying) {
+            this.stopPlaying();
+            this.updateUi();
+            return;
+        }
+        if (this.tools.isActive || this.frames.count <= 1) return;
+        this.player.play(this.frames.fps);
+        this.updateUi();
+    }
+
+    stopPlaying()
+    {
+        if (this.player.isPlaying) this.player.stop();
+    }
+
+    onPlayerStep(steps)
+    {
+        this.frames.selectNext(steps);
+        this.afterFrameChanged(false);
+    }
+
+    setFps(value)
+    {
+        this.frames.setFps(value);
+        this.isUnsaved = true;
+        if (this.player.isPlaying) this.player.play(this.frames.fps);
         this.updateUi();
     }
 
@@ -313,16 +453,18 @@ class App
 
     applyCanvasSize(width, height, isKeepContent)
     {
-        const maxLayers = LayerStack.maxLayersFor(width, height);
-        if (isKeepContent && this.layers.layers.length > maxLayers) {
-            this.showMessage(`${width}×${height} ではレイヤーは ${maxLayers} 枚までです。先に減らしてください`);
+        const problem = isKeepContent ? this.frames.checkResize(width, height) : null;
+        if (problem !== null) {
+            this.showMessage(problem);
             return;
         }
         if (!isKeepContent && !this.confirmDiscard()) return;
+        this.stopPlaying();
         if (isKeepContent) {
-            this.layers.resize(width, height);
+            this.frames.resize(width, height);
         } else {
             this.layers.resetDefault(width, height);
+            this.frames.resetToCurrent();
             this.baseName = kDefaultBaseName;
             this.saveTarget.clear();
         }
@@ -332,8 +474,11 @@ class App
 
     afterDocumentReplaced(isUnsaved)
     {
+        this.stopPlaying();
         this.history.clear();
         this.isUnsaved = isUnsaved;
+        this.framePanel.render();
+        this.thumbnailScope = ThumbnailScope.All;
         this.layerPanel.render();
         this.fitView();
     }
@@ -381,10 +526,12 @@ class App
         if (!this.confirmDiscard()) return;
         try {
             const isProject = ProjectFile.isProjectFileName(file.name);
+            this.stopPlaying();
             if (isProject) {
-                this.layers.restore(await ProjectFile.decode(file));
+                this.frames.restore(await ProjectFile.decode(file));
             } else {
                 this.layers.resetWithImage(await ImageFile.readImage(file));
+                this.frames.resetToCurrent();
             }
             // 画像を開いたときは、上書きで元の画像を壊さないよう保存先を覚えない
             this.saveTarget.setHandle(isProject ? handle : null);
@@ -402,7 +549,24 @@ class App
         const fileName = `${this.baseName}.png`;
         try {
             await ImageFile.savePng(this.layers, scale, fileName);
-            this.showMessage(`${fileName} を保存しました（${scale} 倍）`);
+            const frameNote = this.frames.count > 1 ? `コマ ${this.frames.currentIndex + 1} だけ、` : '';
+            this.showMessage(`${fileName} を保存しました（${frameNote}${scale} 倍）`);
+        } catch (error) {
+            this.showMessage(`保存できませんでした：${error.message}`);
+        }
+    }
+
+    // 全コマを PNG にして ZIP で保存する
+    async saveFrames()
+    {
+        if (this.tools.isActive) return;
+        const scale = Number(this.byId('exportScale').value);
+        const count = this.frames.count;
+        const sources = Array.from({ length: count }, (_, i) => this.frames.frameImageSource(i));
+        this.showMessage(`${count} コマを PNG にしています…`);
+        try {
+            await ImageFile.saveFramesZip(sources, scale, this.baseName);
+            this.showMessage(`${this.baseName}_frames.zip を保存しました（${count} コマ、${scale} 倍）`);
         } catch (error) {
             this.showMessage(`保存できませんでした：${error.message}`);
         }
@@ -414,11 +578,12 @@ class App
         if (this.tools.isActive) return;
         if (isSaveAs) this.saveTarget.clear();
         try {
-            const blob = await ProjectFile.encode(this.layers);
+            const blob = await ProjectFile.encode(this.frames);
             const savedName = await this.saveTarget.save(blob, ProjectFile.toProjectFileName(this.baseName));
             this.baseName = savedName.replace(/\.[^.]*$/, '');
             this.isUnsaved = false;
-            this.showMessage(`${savedName} に保存しました（レイヤー ${this.layers.layers.length} 枚）`);
+            const frameNote = this.frames.count > 1 ? `コマ ${this.frames.count}、` : '';
+            this.showMessage(`${savedName} に保存しました（${frameNote}レイヤー ${this.frames.totalLayerCount()} 枚）`);
         } catch (error) {
             if (error.name !== 'AbortError') this.showMessage(`保存できませんでした：${error.message}`);
         }
@@ -439,7 +604,11 @@ class App
         this.mobile.refresh(this.tools.toolId, this.colorPanel.getColor(false), this.history.canUndo, this.history.canRedo);
         this.byId('zoomLabel').textContent = `${Math.round(this.view.zoom * 100)}%`;
         this.byId('statusSize').textContent = `${this.layers.width} × ${this.layers.height} マス`;
-        this.byId('statusLayer').textContent = `描く先：${this.layers.active.name}`;
+        const frameText = this.frames.count > 1 ? `コマ ${this.frames.currentIndex + 1}/${this.frames.count}・` : '';
+        this.byId('statusLayer').textContent = `${frameText}描く先：${this.layers.active.name}`;
+        this.framePanel.refresh(this.player.isPlaying);
+        // 再生中は絵が変わらないので、小さな絵は描き直さない
+        if (!this.player.isPlaying) this.thumbnailScope = Math.max(this.thumbnailScope, ThumbnailScope.Current);
         this.updateStatusPosition();
         this.requestRender();
     }
@@ -461,9 +630,28 @@ class App
         this.isRenderQueued = true;
         requestAnimationFrame(() => {
             this.isRenderQueued = false;
-            this.view.syncDirty(this.layers);
-            this.view.render(this.layers, this.cursor);
+            this.view.syncDirty(this.layers, this.frames.allLayers());
+            this.view.render(this.layers, this.cursor, this.onionLayers());
+            this.drawPendingThumbnails();
         });
+    }
+
+    // 薄く重ねる前のコマ。描くときの目安なので、再生中と最初のコマでは出さない
+    onionLayers()
+    {
+        const index = this.frames.currentIndex;
+        if (!this.isOnionVisible || this.player.isPlaying || index === 0) return null;
+        return this.frames.layersOf(index - 1);
+    }
+
+    drawPendingThumbnails()
+    {
+        if (this.thumbnailScope === ThumbnailScope.None) return;
+        const indices = this.thumbnailScope === ThumbnailScope.All ? null : [this.frames.currentIndex];
+        this.thumbnailScope = ThumbnailScope.None;
+        this.framePanel.drawThumbnails(
+            (ctx, index, width, height) => this.view.drawThumbnail(ctx, this.frames.layersOf(index), width, height),
+            indices);
     }
 }
 

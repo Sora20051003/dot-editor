@@ -29,7 +29,7 @@
                     <option value="32">32 倍</option>
                 </select>
             </label>
-            <button type="button" id="btnSave" title="見えているレイヤーを重ねて1枚の PNG で保存">PNG で保存</button>
+            <button type="button" id="btnSave" title="今のコマの、見えているレイヤーを重ねて1枚の PNG で保存">PNG で保存</button>
         </div>
         <div class="group">
             <button type="button" id="btnUndo" title="取り消し (Ctrl+Z)">取り消し</button>
@@ -116,14 +116,39 @@
                 <li>X：左右の色を入れ替え</li>
                 <li>H：左右反転／V：上下反転（選んでいるレイヤー）</li>
                 <li>Ctrl+S：作業ファイルで保存</li>
+                <li>, .：前のコマ／次のコマ　Enter：アニメの再生・停止</li>
                 <li>スマホ：1本指で描く／2本指で拡大・移動／2本指で軽くたたくと取り消し</li>
             </ul>
           </div>
         </aside>
 
-        <section class="stage" id="stage">
-            <canvas id="view"></canvas>
-        </section>
+        <div class="center">
+            <section class="stage" id="stage">
+                <canvas id="view"></canvas>
+            </section>
+
+            <!-- アニメのコマの帯 -->
+            <div class="frame-bar" id="frameBar">
+                <div class="frame-controls">
+                    <button type="button" id="btnAnimPlay" class="primary" title="アニメを再生／停止 (Enter)">▶ 再生</button>
+                    <label class="inline" title="1秒に進めるコマの数">速さ
+                        <input type="number" id="animFps" min="1" max="30" value="8"> コマ/秒</label>
+                    <label class="inline" title="前のコマを薄く重ねて表示する（描くときの目安）">
+                        <input type="checkbox" id="chkOnion"> 前のコマを薄く</label>
+                    <span class="frame-buttons">
+                        <button type="button" id="btnFrameAdd" title="空のコマを今のコマの後ろに追加">コマ追加</button>
+                        <button type="button" id="btnFrameDup" title="今のコマを複製して後ろに追加">複製</button>
+                        <button type="button" id="btnFrameDelete" title="今のコマを削除">削除</button>
+                        <button type="button" id="btnFrameLeft" title="今のコマを1つ前へ">◀ 前へ</button>
+                        <button type="button" id="btnFrameRight" title="今のコマを1つ後ろへ">後ろへ ▶</button>
+                    </span>
+                    <button type="button" id="btnSaveFrames"
+                        title="全部のコマを1コマ1枚の PNG にして、ZIP にまとめて保存（倍率は上の「倍率」）">全コマを PNG で保存</button>
+                    <span class="frame-label" id="frameLabel">1 / 1</span>
+                </div>
+                <ol class="frame-list" id="frameList" aria-label="コマ"></ol>
+            </div>
+        </div>
 
         <aside class="panel colors">
             <h2>色</h2>
@@ -193,9 +218,9 @@
         <form method="dialog">
             <h2>マス目の数</h2>
             <div class="size-inputs">
-                <label class="field">横<input type="number" id="inWidth" min="1" max="4096" required></label>
+                <label class="field">横<input type="number" id="inWidth" min="1" max="8192" required></label>
                 <span class="times">×</span>
-                <label class="field">縦<input type="number" id="inHeight" min="1" max="4096" required></label>
+                <label class="field">縦<input type="number" id="inHeight" min="1" max="8192" required></label>
             </div>
             <label class="inline"><input type="checkbox" id="chkSquare"> 縦横を同じにする</label>
             <div class="presets">
@@ -212,10 +237,11 @@
                 <button type="button" data-size="1024">1024</button>
                 <button type="button" data-size="2048">2048</button>
                 <button type="button" data-size="4096">4096</button>
+                <button type="button" data-size="8192">8192</button>
             </div>
             <label class="inline"><input type="radio" name="sizeMode" value="keep" checked> 今の絵を残して大きさだけ変える</label>
             <label class="inline"><input type="radio" name="sizeMode" value="new"> 何もない状態から新しく描く</label>
-            <p class="hint">1〜4096 マスまで。変えると取り消しの履歴は消えます</p>
+            <p class="hint" id="sizeLimitHint">1〜8192 マスまで。変えると取り消しの履歴は消えます</p>
             <menu>
                 <button type="submit" value="cancel" formnovalidate>やめる</button>
                 <button type="submit" value="ok" class="primary">決定</button>
@@ -226,6 +252,7 @@
     <script src="js/ColorUtil.js"></script>
     <script src="js/PixelCanvas.js"></script>
     <script src="js/LayerStack.js"></script>
+    <script src="js/FrameSet.js"></script>
     <script src="js/EditHistory.js"></script>
     <script src="js/BrushShape.js"></script>
     <script src="js/Painter.js"></script>
@@ -234,9 +261,12 @@
     <script src="js/CanvasInput.js"></script>
     <script src="js/ColorPicker.js"></script>
     <script src="js/ColorPanel.js"></script>
+    <script src="js/ZipWriter.js"></script>
     <script src="js/ImageFile.js"></script>
     <script src="js/CanvasSizeDialog.js"></script>
     <script src="js/LayerPanel.js"></script>
+    <script src="js/FramePanel.js"></script>
+    <script src="js/AnimationPlayer.js"></script>
     <script src="js/ProjectFile.js"></script>
     <script src="js/MobileLayout.js"></script>
     <script src="js/ServiceWorkerSetup.js"></script>

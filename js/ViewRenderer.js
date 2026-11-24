@@ -19,6 +19,8 @@ const kMajorGridColor = 'rgba(70, 150, 255, 0.9)';
 const kBorderColor = 'rgba(0, 0, 0, 0.7)';
 const kCursorOuterColor = '#000000';
 const kCursorInnerColor = '#ffffff';
+// 前のコマを薄く重ねるときの濃さ（オニオンスキン）
+const kOnionAlpha = 0.3;
 
 // 絵を画面に表示する。ズーム・スクロール位置と、画面座標からマス座標への変換を持つ
 class ViewRenderer
@@ -112,10 +114,12 @@ class ViewRenderer
         return Math.round(value * this.dpr) / this.dpr;
     }
 
-    syncDirty(layers)
+    // keptLayers：表示用画像を残しておくレイヤー（アニメのほかのコマも含める。
+    // 消してしまうと、コマを替えるたびに絵全体を送り直すことになって重い）
+    syncDirty(layers, keptLayers = layers.layers)
     {
         const liveIds = new Set();
-        for (const layer of layers.layers) {
+        for (const layer of keptLayers) {
             liveIds.add(layer.id);
             this.syncLayer(layer);
         }
@@ -153,8 +157,8 @@ class ViewRenderer
         return surface;
     }
 
-    // layers は LayerStack
-    render(layers, cursor)
+    // layers は LayerStack。onionLayers は薄く重ねる前のコマのレイヤー（出さないときは null）
+    render(layers, cursor, onionLayers = null)
     {
         const ctx = this.ctx;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -166,14 +170,16 @@ class ViewRenderer
         const range = this.visibleRange(layers);
         if (range !== null) {
             this.drawChecker(range);
-            this.drawLayers(range, layers);
+            this.drawLayerList(range, layers.visibleLayers(), 1);
+            // 前のコマは上に薄く重ねる（下に置くと、不透明な背景に隠れて見えないため）
+            if (onionLayers !== null) this.drawLayerList(range, LayerStack.visibleOf(onionLayers), kOnionAlpha);
             this.drawGrids(range);
         }
         this.drawBorder(layers);
         if (cursor !== null) this.drawCursor(cursor);
     }
 
-    // 画面に見えているマスの範囲だけ描く（4096 マスでも重くしないため）
+    // 画面に見えているマスの範囲だけ描く（8192 マスでも重くしないため）
     visibleRange(pixelCanvas)
     {
         const x0 = Math.max(0, Math.floor(-this.offsetX / this.zoom));
@@ -224,17 +230,31 @@ class ViewRenderer
     }
 
     // 下のレイヤーから順に、不透明度を付けて重ねる
-    drawLayers(range, layers)
+    drawLayerList(range, visibleLayers, alpha)
     {
         const ctx = this.ctx;
         const rect = this.rangeToCssRect(range);
         const cellsX = range.x1 - range.x0;
         const cellsY = range.y1 - range.y0;
-        for (const layer of layers.visibleLayers()) {
-            ctx.globalAlpha = layer.opacity;
+        for (const layer of visibleLayers) {
+            ctx.globalAlpha = layer.opacity * alpha;
             ctx.drawImage(
                 this.getSurface(layer.id).canvas, range.x0, range.y0, cellsX, cellsY,
                 rect.left, rect.top, rect.width, rect.height);
+        }
+        ctx.globalAlpha = 1;
+    }
+
+    // アニメのコマの小さな絵。syncDirty のあとに呼ぶ（表示用画像を使うため）
+    drawThumbnail(ctx, layers, width, height)
+    {
+        ctx.clearRect(0, 0, width, height);
+        // 縮めるときはなめらかにしないと、大きな絵の細い線が消える
+        const isShrinking = width < layers[0].canvas.width;
+        ctx.imageSmoothingEnabled = isShrinking;
+        for (const layer of LayerStack.visibleOf(layers)) {
+            ctx.globalAlpha = layer.opacity;
+            ctx.drawImage(this.getSurface(layer.id).canvas, 0, 0, width, height);
         }
         ctx.globalAlpha = 1;
     }
