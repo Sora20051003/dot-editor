@@ -2,11 +2,8 @@
 
 // 絵のまわりに残す余白（画面の割合）
 const kAvatarMargin = 0.04;
-// 頭のゆれ：首の位置（絵の幅・高さに対する割合）を中心に、左右へ少し傾ける
-const kHeadPivotX = 0.5;
+// 首の位置（絵の高さに対する割合）。頭は左右には傾けず、上下にだけ動かす（利用者の希望で横揺れをなくした）
 const kHeadPivotY = 0.62;
-const kHeadSwayDegrees = 1.6;
-const kHeadSwayPeriodMs = 4200;
 // 話しているときに頭が少し上がる量（絵の高さに対する割合）と、戻る速さ
 const kTalkBobAmount = 0.008;
 const kTalkBobEase = 0.25;
@@ -80,16 +77,12 @@ class AvatarView
 
     applyHeadMotion(now)
     {
-        const { width, height } = this.model;
-        const pivotX = width * kHeadPivotX;
+        const height = this.model.height;
         const pivotY = height * kHeadPivotY;
-        const angle = Math.sin((now / kHeadSwayPeriodMs) * Math.PI * 2) * kHeadSwayDegrees * (Math.PI / 180);
         // 呼吸で体が伸びた分だけ頭も上下させ、首が離れないようにする
         const breathLift = Math.sin((now / kBreathPeriodMs) * Math.PI * 2) * kBreathScale * (height - pivotY);
         const lift = this.talkBob * kTalkBobAmount * height + breathLift;
-        this.ctx.translate(pivotX, pivotY - lift);
-        this.ctx.rotate(angle);
-        this.ctx.translate(-pivotX, -pivotY);
+        this.ctx.translate(0, -lift);
     }
 
     fitScale()
