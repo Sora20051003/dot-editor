@@ -129,6 +129,7 @@ class App
         this.byId('btnFit').addEventListener('click', () => this.fitView());
         // 描きかけの絵を消さないよう、通信モードは新しいタブで開く
         this.byId('btnPlay').addEventListener('click', () => window.open('play.html', '_blank'));
+        this.byId('btnAvatar').addEventListener('click', () => window.open('avatar.html', '_blank'));
     }
 
     bindToolPanel()

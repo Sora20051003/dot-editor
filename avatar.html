@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#1e2026">
+    <title>ドット絵アバター</title>
+    <link rel="icon" href="icon.ico">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/avatar.css">
+</head>
+<body class="avatar-page" data-background="green">
+    <canvas id="avatarCanvas" class="avatar-canvas" aria-label="アバター"></canvas>
+
+    <section id="avatarPanel" class="avatar-panel">
+        <h1 class="app-title">ドット絵アバター</h1>
+        <div class="avatar-row">
+            <button type="button" id="btnMic" class="primary">マイクを使う</button>
+            <button type="button" id="btnOpenAvatar" title="エディタで保存した作業ファイル（.dotart）を開く。ここへ落としても開けます">絵を開く</button>
+            <input type="file" id="avatarFileInput" accept=".dotart" hidden>
+        </div>
+        <label class="avatar-field">声に反応する強さ
+            <input type="range" id="voiceSensitivity" min="1" max="100" value="60">
+        </label>
+        <div class="voice-meter" title="声の大きさ。線より右に届くと口が開きます">
+            <div id="voiceMeterBar" class="voice-meter-bar"></div>
+            <div id="voiceMeterThreshold" class="voice-meter-threshold"></div>
+        </div>
+        <label class="avatar-field">背景
+            <select id="avatarBackground">
+                <option value="green">緑（配信ソフトで抜く用）</option>
+                <option value="blue">青（配信ソフトで抜く用）</option>
+                <option value="transparent">透明（ブラウザソース用）</option>
+                <option value="dark">暗い色（確認用）</option>
+            </select>
+        </label>
+        <div class="avatar-row">
+            <button type="button" id="btnHideUi" title="配信に映らないよう、この欄を隠す（H キーか、画面を押すと戻る）">操作を隠す</button>
+            <a href="index.html" class="link-button">エディタへ</a>
+        </div>
+        <p id="avatarMessage" class="avatar-message" role="status"></p>
+        <details class="avatar-help">
+            <summary>使い方</summary>
+            <p>エディタでレイヤーに「目 開」「目 閉」「口 開」「口 閉」と名前を付けると、まばたきと口パクに使われます。
+                「体」はゆれず、ほかのレイヤーは頭と一緒にゆれます。</p>
+            <p>配信ソフト（OBS など）では、このページを「ウィンドウキャプチャ」で取り込み、緑か青を「クロマキー」で抜いてください。</p>
+        </details>
+    </section>
+    <p id="showUiHint" class="show-ui-hint">画面を押すか H キーで操作を出す</p>
+
+    <!-- 作業ファイルを読むのに要る部品（大きさの上限などの決まりはエディタと同じものを使う） -->
+    <script src="js/ColorUtil.js"></script>
+    <script src="js/PixelCanvas.js"></script>
+    <script src="js/ImageFile.js"></script>
+    <script src="js/LayerPanel.js"></script>
+    <script src="js/CanvasSizeDialog.js"></script>
+    <script src="js/LayerStack.js"></script>
+    <script src="js/FrameSet.js"></script>
+    <script src="js/ProjectFile.js"></script>
+    <script src="js/avatar/AvatarModel.js"></script>
+    <script src="js/avatar/MouthByVoice.js"></script>
+    <script src="js/avatar/Blinker.js"></script>
+    <script src="js/avatar/AvatarView.js"></script>
+    <script src="js/avatar/AvatarApp.js"></script>
+</body>
+</html>

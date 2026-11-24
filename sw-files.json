@@ -1,10 +1,12 @@
 [
     "./",
+    "avatar.html",
     "icon.ico",
     "index.html",
     "manifest.webmanifest",
     "play.html",
     "sw.js",
+    "css/avatar.css",
     "css/play.css",
     "css/style.css",
     "icons/icon-192.png",
@@ -32,6 +34,11 @@
     "js/ToolController.js",
     "js/ViewRenderer.js",
     "js/ZipWriter.js",
+    "js/avatar/AvatarApp.js",
+    "js/avatar/AvatarModel.js",
+    "js/avatar/AvatarView.js",
+    "js/avatar/Blinker.js",
+    "js/avatar/MouthByVoice.js",
     "js/game/AnswerChecker.js",
     "js/game/GameRoom.js",
     "js/game/GuessBoard.js",
@@ -54,5 +61,6 @@
     "js/play/GameSidePanel.js",
     "js/play/LobbyView.js",
     "js/play/PixelImageView.js",
-    "js/play/PlayApp.js"
+    "js/play/PlayApp.js",
+    "models/vtuber-avatar.dotart"
 ]
