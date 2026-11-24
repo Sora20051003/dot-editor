@@ -3,7 +3,10 @@
 const kMaxFrameCount = 500;
 const kDefaultFps = 8;
 const kMinFps = 1;
-const kMaxFps = 30;
+// 120 は 120Hz 以上のモニター向け。普通の 60Hz の画面では2コマずつ進む（速さは正しい）
+const kMaxFps = 120;
+// 速さの候補（映像・ゲームでよく使う値）
+const kFpsPresets = Object.freeze([1, 2, 4, 5, 6, 8, 10, 12, 15, 20, 24, 30, 48, 50, 60, 90, 100, 120]);
 
 // アニメのコマの並び。各コマはレイヤーの一式（Layer の配列）と、選んでいるレイヤーの番号を持つ。
 // 描く・レイヤー欄などの部品は LayerStack だけを見ているので、コマを替えるときは

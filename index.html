@@ -132,7 +132,8 @@
                 <div class="frame-controls">
                     <button type="button" id="btnAnimPlay" class="primary" title="アニメを再生／停止 (Enter)">▶ 再生</button>
                     <label class="inline" title="1秒に進めるコマの数">速さ
-                        <input type="number" id="animFps" min="1" max="30" value="8"> コマ/秒</label>
+                        <input type="number" id="animFps" min="1" max="120" value="8"> コマ/秒</label>
+                    <select id="animFpsPreset" title="よく使う速さから選ぶ" aria-label="よく使う速さ"></select>
                     <label class="inline" title="前のコマを薄く重ねて表示する（描くときの目安）">
                         <input type="checkbox" id="chkOnion"> 前のコマを薄く</label>
                     <span class="frame-buttons">

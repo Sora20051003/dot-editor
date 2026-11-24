@@ -18,6 +18,7 @@ class FramePanel
             list: byId('frameList'),
             play: byId('btnAnimPlay'),
             fps: byId('animFps'),
+            fpsPreset: byId('animFpsPreset'),
             onion: byId('chkOnion'),
             add: byId('btnFrameAdd'),
             duplicate: byId('btnFrameDup'),
@@ -42,7 +43,19 @@ class FramePanel
         el.fps.min = String(kMinFps);
         el.fps.max = String(kMaxFps);
         el.fps.addEventListener('change', () => this.handlers.onFpsChange(el.fps.value));
+        el.fpsPreset.replaceChildren(...FramePanel.createPresetOptions());
+        el.fpsPreset.addEventListener('change', () => {
+            if (el.fpsPreset.value !== '') this.handlers.onFpsChange(el.fpsPreset.value);
+        });
         el.onion.addEventListener('change', () => this.handlers.onOnionChange(el.onion.checked));
+    }
+
+    // 先頭は、候補にない速さを打ったとき用の空の項目
+    static createPresetOptions()
+    {
+        const custom = new Option('候補から選ぶ', '');
+        const presets = kFpsPresets.map((fps) => new Option(`${fps} コマ/秒`, String(fps)));
+        return [custom, ...presets];
     }
 
     // コマの数や並びが変わったときに作り直す
@@ -110,6 +123,7 @@ class FramePanel
         el.play.textContent = isPlaying ? '■ 停止' : '▶ 再生';
         el.play.classList.toggle('is-playing', isPlaying);
         if (document.activeElement !== el.fps) el.fps.value = String(frames.fps);
+        el.fpsPreset.value = kFpsPresets.includes(frames.fps) ? String(frames.fps) : '';
         // 再生中にコマを足したり並べ替えたりすると、どのコマを触ったか分からなくなるので止める
         el.add.disabled = isPlaying;
         el.duplicate.disabled = isPlaying;
