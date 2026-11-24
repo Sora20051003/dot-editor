@@ -220,9 +220,9 @@
         <form method="dialog">
             <h2>マス目の数</h2>
             <div class="size-inputs">
-                <label class="field">横<input type="number" id="inWidth" min="1" max="8192" required></label>
+                <label class="field">横<input type="number" id="inWidth" min="1" max="16384" required></label>
                 <span class="times">×</span>
-                <label class="field">縦<input type="number" id="inHeight" min="1" max="8192" required></label>
+                <label class="field">縦<input type="number" id="inHeight" min="1" max="16384" required></label>
             </div>
             <label class="inline"><input type="checkbox" id="chkSquare"> 縦横を同じにする</label>
             <div class="presets">
@@ -240,6 +240,7 @@
                 <button type="button" data-size="2048">2048</button>
                 <button type="button" data-size="4096">4096</button>
                 <button type="button" data-size="8192">8192</button>
+                <button type="button" data-size="16384">16384</button>
             </div>
             <label class="inline"><input type="radio" name="sizeMode" value="keep" checked> 今の絵を残して大きさだけ変える</label>
             <label class="inline"><input type="radio" name="sizeMode" value="new"> 何もない状態から新しく描く</label>

@@ -1,8 +1,8 @@
 'use strict';
 
 // Service Worker：ホーム画面に追加したアプリを電波がなくても開けるようにする。
-// 20261125050819 は web\publish.ps1 が公開のたびに日時へ置き換える（中身が変わると新しい版として入れ直される）
-const kCacheVersion = '20261125050819';
+// 20261125052022 は web\publish.ps1 が公開のたびに日時へ置き換える（中身が変わると新しい版として入れ直される）
+const kCacheVersion = '20261125052022';
 const kCacheName = `dot-editor-${kCacheVersion}`;
 // 公開するファイルの一覧。web\publish.ps1 が作る
 const kFileListUrl = 'sw-files.json';

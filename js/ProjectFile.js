@@ -17,7 +17,7 @@ const kEncodeChunkBytes = 16 * 1024 * 1024;
 const kMaxProjectHeaderBytes = 16 * 1024 * 1024;
 // 見るだけ（アバターの画面）で開ける大きさの上限。エディタの上限（iPhone は 4096）やメモリの上限とは別にする。
 // 1枚ずつ縮めて使うので、絵の全部を同時には持たないため
-const kMaxProjectViewSize = 8192;
+const kMaxProjectViewSize = 16384;
 const kBrokenProjectMessage = 'ファイルが壊れているか、作業ファイルではありません';
 const kTruncatedProjectMessage = 'ファイルが途中で切れているか、壊れています';
 

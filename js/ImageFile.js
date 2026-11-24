@@ -3,7 +3,12 @@
 // iPhone・iPad の Safari は約 4096×4096 より大きいキャンバスを表示できないので、そこだけ上限を下げる
 const kIsAppleMobile = /iPhone|iPad|iPod/.test(navigator.userAgent)
     || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-const kMaxCanvasSize = kIsAppleMobile ? 4096 : 8192;
+// 16384 は1枚 1GB になるので、メモリが 8GB 以上ある PC（Chrome / Edge の navigator.deviceMemory）だけにする。
+// そのときレイヤーのメモリの上限（LayerStack の 2304MB）で2枚＝下地と描く用がちょうど入る。
+// 少ない PC・量が分からないブラウザは 8192（768MB で3枚）。LayerStack.js より先に読む画面もあるので、ここで直接調べる
+const kLargeCanvasDeviceGb = 8;
+const kHasLargeCanvasMemory = (navigator.deviceMemory ?? 0) >= kLargeCanvasDeviceGb;
+const kMaxCanvasSize = kIsAppleMobile ? 4096 : (kHasLargeCanvasMemory ? 16384 : 8192);
 // ブラウザが作れるキャンバスの1辺の上限（Chrome / Edge）
 const kMaxExportSide = 16384;
 const kRevokeDelayMs = 1000;
