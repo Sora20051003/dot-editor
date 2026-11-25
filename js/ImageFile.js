@@ -4,7 +4,7 @@
 const kIsAppleMobile = /iPhone|iPad|iPod/.test(navigator.userAgent)
     || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 // 16384 は1枚 1GB になるので、メモリが 8GB 以上ある PC（Chrome / Edge の navigator.deviceMemory）だけにする。
-// そのときレイヤーのメモリの上限（LayerStack の 2304MB）で2枚＝下地と描く用がちょうど入る。
+// そのときレイヤーのメモリの上限（LayerStack の 2560MB）で2枚＝下地と描く用がちょうど入る。
 // 少ない PC・量が分からないブラウザは 8192（768MB で3枚）。LayerStack.js より先に読む画面もあるので、ここで直接調べる
 const kLargeCanvasDeviceGb = 8;
 const kHasLargeCanvasMemory = (navigator.deviceMemory ?? 0) >= kLargeCanvasDeviceGb;

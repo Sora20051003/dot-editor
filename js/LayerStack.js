@@ -3,11 +3,11 @@
 const kBaseLayerName = '下地';
 const kMaxLayerCount = 32;
 // レイヤー全部の絵に使ってよいメモリ（アニメの全コマの合計）。
-// メモリが多い PC（8GB 以上）は 2304MB：8192×8192（1枚 256MB）で 9 枚＝アバターの部品が全部入る。
+// メモリが多い PC（8GB 以上）は 2560MB：8192×8192（1枚 256MB）で 10 枚＝アバターの部品（前髪の影を含む）が全部入る。
 // 少ない PC や量が分からないときは 768MB（8192 で 3 枚・4096 で 12 枚）にして、タブが落ちるのを防ぐ。
 // navigator.deviceMemory は Chrome / Edge だけが持ち、8 より大きい値は 8 と答える
 const kLargeMemoryDeviceGb = 8;
-const kLayerMemoryBudgetLarge = 2304 * 1024 * 1024;
+const kLayerMemoryBudgetLarge = 2560 * 1024 * 1024;
 const kLayerMemoryBudgetSmall = 768 * 1024 * 1024;
 const kLayerMemoryBudget = (navigator.deviceMemory ?? 0) >= kLargeMemoryDeviceGb
     ? kLayerMemoryBudgetLarge
