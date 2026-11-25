@@ -49,6 +49,8 @@
                 映像はこの PC の中で読み取るだけで、どこにも送りません。</p>
             <p>「顔が見つかりません」と出て小窓に顔が映らないときは、「使うカメラ」で顔を映すカメラを選んでください
                 （キャプチャ機器や OBS の仮想カメラが選ばれていることがあります）。選んだカメラは次から最初に使います。</p>
+            <p>「映像が出ていません」「開けませんでした」と出るときは、カメラのシャッター・カメラのオフキーを確かめ、
+                カメラを使うほかのアプリを閉じてください。Windows の「カメラ」アプリでも映らないときは、PC を再起動してください。</p>
             <p>エディタでレイヤーに「目 開」「目 閉」「口 開」「口 閉」と名前を付けると、まばたきと口に使われます。
                 「体」は動かず、ほかのレイヤーは頭と一緒に動きます。</p>
             <p>配信ソフト（OBS など）では、このページを「ウィンドウキャプチャ」で取り込み、緑か青を「クロマキー」で抜いてください。</p>
@@ -67,6 +69,7 @@
     <script src="js/ProjectFile.js"></script>
     <script src="js/avatar/AvatarModel.js"></script>
     <script src="js/avatar/FaceTracker.js"></script>
+    <script src="js/avatar/VideoSignalCheck.js"></script>
     <script src="js/avatar/AvatarView.js"></script>
     <script src="js/avatar/AvatarApp.js"></script>
 </body>
