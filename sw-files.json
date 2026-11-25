@@ -38,7 +38,6 @@
     "js/avatar/AvatarModel.js",
     "js/avatar/AvatarView.js",
     "js/avatar/FaceTracker.js",
-    "js/avatar/VideoSignalCheck.js",
     "js/game/AnswerChecker.js",
     "js/game/GameRoom.js",
     "js/game/GuessBoard.js",
